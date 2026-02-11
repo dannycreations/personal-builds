@@ -125,64 +125,70 @@ file packages/types/src/providers/gemini-cli.ts
 +    maxTokens: 65_536,
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: "xml",
 +    supportsPromptCache: true,
++    supportsNativeTools: true,
++    defaultToolProtocol: 'native',
++    supportsReasoningEffort: ['low', 'high'],
++    reasoningEffort: 'low',
++    supportsTemperature: true,
++    defaultTemperature: 1,
 +    inputPrice: 0,
 +    outputPrice: 0,
 +    maxThinkingTokens: 65_536,
-+    supportsReasoningEffort: ['low', 'high'],
 +  },
 +  'gemini-3-flash-preview': {
 +    maxTokens: 65_536,
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: "xml",
 +    supportsPromptCache: true,
++    supportsNativeTools: true,
++    defaultToolProtocol: 'native',
++    supportsReasoningEffort: ['minimal', 'low', 'medium', 'high'],
++    reasoningEffort: 'medium',
++    supportsTemperature: true,
++    defaultTemperature: 1,
 +    inputPrice: 0,
 +    outputPrice: 0,
 +    maxThinkingTokens: 65_536,
-+    supportsReasoningEffort: ['minimal', 'low', 'medium', 'high'],
 +  },
 +  'gemini-2.5-pro': {
 +    maxTokens: 64_000,
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: "xml",
 +    supportsPromptCache: true,
++    supportsNativeTools: true,
++    defaultToolProtocol: 'native',
++    supportsReasoningBudget: true,
++    requiredReasoningBudget: true,
 +    inputPrice: 0,
 +    outputPrice: 0,
 +    maxThinkingTokens: 32_768,
-+    supportsReasoningBudget: true,
-+    requiredReasoningBudget: true,
 +  },
 +  'gemini-2.5-flash': {
 +    maxTokens: 64_000,
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: "xml",
 +    supportsPromptCache: true,
++    supportsNativeTools: true,
++    defaultToolProtocol: 'native',
++    supportsReasoningBudget: true,
++    requiredReasoningBudget: true,
 +    inputPrice: 0,
 +    outputPrice: 0,
 +    maxThinkingTokens: 32_768,
-+    supportsReasoningBudget: true,
-+    requiredReasoningBudget: true,
 +  },
 +  'gemini-2.5-flash-lite': {
 +    maxTokens: 64_000,
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: "xml",
 +    supportsPromptCache: true,
++    supportsNativeTools: true,
++    defaultToolProtocol: 'native',
++    supportsReasoningBudget: true,
++    requiredReasoningBudget: true,
 +    inputPrice: 0,
 +    outputPrice: 0,
 +    maxThinkingTokens: 32_768,
-+    supportsReasoningBudget: true,
-+    requiredReasoningBudget: true,
 +  },
 +} as const satisfies Record<string, ModelInfo>;
 
@@ -237,7 +243,6 @@ file src/api/providers/gemini-cli.ts
 +import { OAuth2Client } from 'google-auth-library';
 +import { homedir } from 'node:os';
 +import { dirname, join } from 'node:path';
-+import OpenAI from 'openai';
 +import { convertAnthropicMessageToGemini } from '../transform/gemini-format';
 +import { getModelParams } from '../transform/model-params';
 +import { BaseProvider } from './base-provider';
@@ -274,7 +279,7 @@ file src/api/providers/gemini-cli.ts
 +              const iterator = originalMethod.apply(this, args);
 +              yield* iterator;
 +              return;
-+            } catch (error: any) {
++            } catch (error) {
 +              if (await handleRetryLogic(error)) continue;
 +              throw error;
 +            }
@@ -285,7 +290,7 @@ file src/api/providers/gemini-cli.ts
 +        while (true) {
 +          try {
 +            return await originalMethod.apply(this, args);
-+          } catch (error: any) {
++          } catch (error) {
 +            if (await handleRetryLogic(error)) continue;
 +            throw error;
 +          }
@@ -316,6 +321,8 @@ file src/api/providers/gemini-cli.ts
 +  private authClient: OAuth2Client;
 +  private credentials?: OAuthCredentials;
 +  private projectId?: string;
++  private lastResponseId?: string;
++  private lastThoughtSignature?: string;
 +  private readonly credPath: string;
 +
 +  public constructor(options: ApiHandlerOptions) {
@@ -332,19 +339,40 @@ file src/api/providers/gemini-cli.ts
 +    metadata?: ApiHandlerCreateMessageMetadata,
 +  ): ApiStream {
 +    const { id: model, info, reasoning: thinkingConfig, maxTokens } = this.getModel();
++    this.lastResponseId = undefined;
++    this.lastThoughtSignature = undefined;
++
++    const isHybridReasoningModel = info.supportsReasoningBudget || info.requiredReasoningBudget;
++    const maxOutputTokens = isHybridReasoningModel ? (this.options.modelMaxTokens ?? maxTokens ?? undefined) : (maxTokens ?? undefined);
++
++    const usingNativeTools = Boolean(metadata?.tools && metadata.tools.length > 0);
++    const includeThoughtSignatures = Boolean(thinkingConfig) || usingNativeTools;
++
++    const geminiMessages = messages.filter((message): message is Anthropic.Messages.MessageParam => {
++      const meta = message as { type?: string };
++      if (meta.type === 'reasoning') {
++        return false;
++      }
++      return true;
++    });
 +
 +    const toolIdToName = new Map<string, string>();
-+    const contents = messages.flatMap((m) => {
-+      if (Array.isArray(m.content)) {
-+        for (const block of m.content) {
-+          if (block.type === 'tool_use') toolIdToName.set(block.id, block.name);
++    for (const message of messages) {
++      if (Array.isArray(message.content)) {
++        for (const block of message.content) {
++          if (block.type === 'tool_use') {
++            toolIdToName.set(block.id, block.name);
++          }
 +        }
 +      }
-+      return convertAnthropicMessageToGemini(m, {
-+        includeThoughtSignatures: !!thinkingConfig,
-+        toolIdToName,
-+      });
-+    });
++    }
++
++    const contents = geminiMessages.map((message) => convertAnthropicMessageToGemini(message, { includeThoughtSignatures, toolIdToName })).flat();
++
++    const supportsTemperature = info.supportsTemperature !== false;
++    const temperatureConfig: number | undefined = supportsTemperature
++      ? (this.options.modelTemperature ?? info.defaultTemperature ?? 1)
++      : info.defaultTemperature;
 +
 +    await this.ensureAuthenticated();
 +    await this.discoverProjectId();
@@ -358,8 +386,8 @@ file src/api/providers/gemini-cli.ts
 +        },
 +        contents,
 +        generationConfig: {
-+          temperature: this.options.modelTemperature ?? 0.7,
-+          maxOutputTokens: this.options.modelMaxTokens ?? maxTokens ?? 8192,
++          temperature: temperatureConfig,
++          maxOutputTokens,
 +          ...(thinkingConfig ? { thinkingConfig } : {}),
 +        },
 +      },
@@ -368,18 +396,38 @@ file src/api/providers/gemini-cli.ts
 +    if (this.shouldIncludeTools(info, metadata)) {
 +      requestBody.request.tools = [
 +        {
-+          functionDeclarations: metadata!.tools!.map((tool) => {
-+            const fn = (tool as OpenAI.ChatCompletionFunctionTool).function;
-+            return {
-+              name: fn.name,
-+              description: fn.description,
-+              parameters: this.sanitizeSchema(fn.parameters),
-+            };
-+          }),
++          functionDeclarations: metadata!.tools!.map((tool) => ({
++            name: (tool as any).function.name,
++            description: (tool as any).function.description,
++            parametersJsonSchema: (tool as any).function.parameters,
++          })),
 +        },
 +      ];
-+      if (metadata!.tool_choice) {
-+        requestBody.request.toolConfig = this.configureToolChoice(metadata!.tool_choice);
++
++      if (metadata?.allowedFunctionNames && metadata.allowedFunctionNames.length > 0) {
++        requestBody.request.toolConfig = {
++          functionCallingConfig: {
++            mode: FunctionCallingConfigMode.ANY,
++            allowedFunctionNames: metadata.allowedFunctionNames,
++          },
++        };
++      } else if (metadata?.tool_choice) {
++        const choice = metadata.tool_choice;
++        let mode = FunctionCallingConfigMode.AUTO;
++        let allowedFunctionNames: string[] | undefined;
++
++        if (choice === 'none') {
++          mode = FunctionCallingConfigMode.NONE;
++        } else if (choice === 'required') {
++          mode = FunctionCallingConfigMode.ANY;
++        } else if (typeof choice === 'object' && choice.type === 'function') {
++          mode = FunctionCallingConfigMode.ANY;
++          allowedFunctionNames = [choice.function.name];
++        }
++
++        requestBody.request.toolConfig = {
++          functionCallingConfig: { mode, ...(allowedFunctionNames ? { allowedFunctionNames } : {}) },
++        };
 +      }
 +    }
 +
@@ -403,20 +451,44 @@ file src/api/providers/gemini-cli.ts
 +        const responseData = jsonData.response || jsonData;
 +        const candidate = responseData.candidates?.[0];
 +
++        if (responseData.responseId) {
++          this.lastResponseId = responseData.responseId;
++        }
++
 +        if (candidate?.content?.parts) {
 +          for (const part of candidate.content.parts) {
-+            if (part.text) {
-+              yield { type: part.thought ? 'reasoning' : 'text', text: part.text };
++            const thoughtSignature = part.thoughtSignature;
++            if (includeThoughtSignatures && thoughtSignature) {
++              this.lastThoughtSignature = thoughtSignature;
++            }
++
++            if (part.thought) {
++              if (part.text) {
++                yield { type: 'reasoning', text: part.text };
++              }
 +            } else if (part.functionCall) {
-+              const callId = `${part.functionCall.name}-${toolCallCounter++}`;
-+              const index = toolCallCounter - 1;
++              const callId = `${part.functionCall.name}-${toolCallCounter}`;
++              const args = JSON.stringify(part.functionCall.args || {});
++
 +              yield {
 +                type: 'tool_call_partial',
-+                index,
++                index: toolCallCounter,
 +                id: callId,
 +                name: part.functionCall.name,
-+                arguments: JSON.stringify(part.functionCall.args || {}),
++                arguments: undefined,
 +              };
++
++              yield {
++                type: 'tool_call_partial',
++                index: toolCallCounter,
++                id: callId,
++                name: undefined,
++                arguments: args,
++              };
++
++              toolCallCounter++;
++            } else if (part.text) {
++              yield { type: 'text', text: part.text };
 +            }
 +          }
 +        }
@@ -441,7 +513,12 @@ file src/api/providers/gemini-cli.ts
 +
 +  @Retry()
 +  public async completePrompt(prompt: string): Promise<string> {
-+    const { id: model } = this.getModel();
++    const { id: model, info } = this.getModel();
++
++    const supportsTemperature = info.supportsTemperature !== false;
++    const temperatureConfig: number | undefined = supportsTemperature
++      ? (this.options.modelTemperature ?? info.defaultTemperature ?? 1)
++      : info.defaultTemperature;
 +
 +    await this.ensureAuthenticated();
 +    await this.discoverProjectId();
@@ -451,7 +528,7 @@ file src/api/providers/gemini-cli.ts
 +      project: this.projectId,
 +      request: {
 +        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-+        generationConfig: { temperature: this.options.modelTemperature ?? 0.7 },
++        generationConfig: { temperature: temperatureConfig },
 +      },
 +    };
 +
@@ -471,6 +548,14 @@ file src/api/providers/gemini-cli.ts
 +    );
 +  }
 +
++  public getThoughtSignature(): string | undefined {
++    return this.lastThoughtSignature;
++  }
++
++  public getResponseId(): string | undefined {
++    return this.lastResponseId;
++  }
++
 +  public override getModel() {
 +    const modelId = this.options.apiModelId?.replace(':thinking', '') || geminiCliDefaultModelId;
 +    const id = (modelId in geminiCliModels ? modelId : geminiCliDefaultModelId) as GeminiCliModelId;
@@ -484,62 +569,6 @@ file src/api/providers/gemini-cli.ts
 +
 +  private shouldIncludeTools(info: any, metadata?: ApiHandlerCreateMessageMetadata): boolean {
 +    return !!(info.supportsNativeTools && metadata?.tools?.length && metadata.toolProtocol !== 'xml');
-+  }
-+
-+  private sanitizeSchema(schema: any) {
-+    if (!schema || typeof schema !== 'object') {
-+      return schema;
-+    }
-+
-+    const res: any = Array.isArray(schema) ? [] : {};
-+
-+    for (const [key, value] of Object.entries(schema)) {
-+      if (key === 'type' && Array.isArray(value)) {
-+        res[key] = value.find((t) => t !== 'null') || value[0];
-+        continue;
-+      }
-+
-+      if (key === 'properties' && typeof value === 'object') {
-+        res[key] = Object.fromEntries(Object.entries(value as object).map(([k, v]) => [k, this.sanitizeSchema(v)]));
-+        continue;
-+      }
-+
-+      if (key === 'items' && typeof value === 'object') {
-+        res[key] = this.sanitizeSchema(value);
-+        continue;
-+      }
-+
-+      if (key === 'required' && Array.isArray(value)) {
-+        res[key] = value;
-+        continue;
-+      }
-+
-+      const forbidden = ['default', 'additionalProperties', '$schema', 'pattern'];
-+      if (!forbidden.includes(key)) {
-+        res[key] = value;
-+      }
-+    }
-+
-+    if (res.type && typeof res.type === 'string') {
-+      res.type = res.type.toUpperCase();
-+    }
-+
-+    return res;
-+  }
-+
-+  private configureToolChoice(choice: ApiHandlerCreateMessageMetadata['tool_choice']) {
-+    let mode = FunctionCallingConfigMode.AUTO;
-+    let allowedFunctionNames: string[] | undefined;
-+
-+    if (choice === 'none') {
-+      mode = FunctionCallingConfigMode.NONE;
-+    } else if (choice === 'required') {
-+      mode = FunctionCallingConfigMode.ANY;
-+    } else if (typeof choice === 'object' && choice.type === 'function') {
-+      mode = FunctionCallingConfigMode.ANY;
-+      allowedFunctionNames = [choice.function.name];
-+    }
-+    return { functionCallingConfig: { mode, ...(allowedFunctionNames ? { allowedFunctionNames } : {}) } };
 +  }
 +
 +  private async ensureAuthenticated(): Promise<void> {
