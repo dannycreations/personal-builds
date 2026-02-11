@@ -431,8 +431,8 @@ label export const modelIdKeysByProvider: Record<TypicalProvider, ModelIdKey> = 
   */
  
 label export const MODELS_BY_PROVIDER: Record<
-+	Exclude<ProviderName, "fake-ai" | "human-relay" | "gemini-cli" | "openai" | "gemini">,
 -	Exclude<ProviderName, "fake-ai" | "human-relay" | "openai" | "gemini">,
++	Exclude<ProviderName, "fake-ai" | "human-relay" | "gemini-cli" | "openai" | "gemini">,
  	{ id: ProviderName; label: string; models: string[] }
  > = {
  	anthropic: {
