@@ -655,6 +655,10 @@ file src/api/providers/gemini-cli.ts
 +const CODE_ASSIST_ENDPOINT = "https://cloudcode-pa.googleapis.com"
 +const CODE_ASSIST_API_VERSION = "v1internal"
 +
++// Replaces the missing extension-config.json
++onst GEMINI_OAUTH_CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
++const GEMINI_OAUTH_CLIENT_SECRET = "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"
++
 +interface OAuthCredentials {
 +	access_token: string
 +	refresh_token: string
@@ -683,25 +687,14 @@ file src/api/providers/gemini-cli.ts
 +		this.authClient = new OAuth2Client("", "", OAUTH_REDIRECT_URI)
 +	}
 +
-+	private async fetchOAuthConfig(): Promise<void> {
-+		try {
-+			const response = await axios.get<{ geminiCli: OauthConfig }>(getExtensionConfigUrl())
-+			const config = response.data
-+
-+			this.oauthClientId = config.geminiCli.oauthClientId
-+			this.oauthClientSecret = config.geminiCli.oauthClientSecret
-+
-+			this.authClient = new OAuth2Client(this.oauthClientId, this.oauthClientSecret, OAUTH_REDIRECT_URI)
-+		} catch (error) {
-+			throw new Error("OAuth client credentials not found in config", error)
-+		}
-+	}
-+
 +	private async loadOAuthCredentials(): Promise<void> {
 +		try {
++			// Patched fetch OAuth config logic
 +			// First, fetch OAuth config if not already fetched
 +			if (!this.oauthClientId || !this.oauthClientSecret) {
-+				await this.fetchOAuthConfig()
++				this.oauthClientId = GEMINI_OAUTH_CLIENT_ID
++				this.oauthClientSecret = GEMINI_OAUTH_CLIENT_SECRET
++				this.authClient = new OAuth2Client(this.oauthClientId, this.oauthClientSecret, OAUTH_REDIRECT_URI)
 +			}
 +
 +			const credPath = this.options.geminiCliOAuthPath || path.join(os.homedir(), ".gemini", "oauth_creds.json")
