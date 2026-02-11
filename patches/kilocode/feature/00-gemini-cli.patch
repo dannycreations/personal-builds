@@ -1,108 +1,174 @@
+file cli/docs/PROVIDER_CONFIGURATION.md
+label This guide provides detailed information on how to configure each provider in Ki
+    - [DeepInfra](#deepinfra)
+    - [IO Intelligence](#io-intelligence)
+    - [Qwen Code](#qwen-code)
++    - [Gemini CLI](#gemini-cli)
+    - [ZAI](#zai)
+    - [Minimax](#minimax)
+    - [Unbound](#unbound)
+
+file cli/docs/PROVIDER_CONFIGURATION.md
+label Qwen Code AI models.
+
+---
+
++### gemini-cli
++
++Gemini CLI integration.
++
++**Description**: Use Google's Gemini models through CLI with OAuth authentication.
++
++**Required Fields**:
++
++- `geminiCliOAuthPath` (text): Path to OAuth credentials file (default: `~/.gemini/oauth_creds.json`)
++- `geminiCliProjectId` (text): Google Cloud project ID
++- `apiModelId` (text): The model to use (default: `gemini-2.5-flash-preview-04-17`)
++
++**Example Configuration**:
++
++```json
++{
++	"id": "default",
++	"provider": "gemini-cli",
++	"geminiCliOAuthPath": "~/.gemini/oauth_creds.json",
++	"geminiCliProjectId": "my-project-123",
++	"apiModelId": "gemini-2.5-flash-preview-04-17"
++}
++```
++
++**Default Model**: `gemini-2.5-flash-preview-04-17`
++
++**Notes**:
++
++- Requires OAuth credentials file
++- Requires Google Cloud project
++
++
+### zai
+
+ZAI AI platform.
+
+file cli/src/commands/__tests__/models-api.test.ts
+label describe("models-api command", () => {
+			"featherless",
+			"roo",
+			"claude-code",
++			"gemini-cli",
+		]
+
+		it.each(staticProviders)("should recognize %s as static provider", (provider) => {
+
 file cli/src/config/mapper.ts
 label export function getModelIdForProvider(provider: ProviderConfig): string {
-
- 		case "bedrock":
- 		case "vertex":
- 		case "gemini":
+		case "bedrock":
+		case "vertex":
+		case "gemini":
 +		case "gemini-cli":
- 		case "mistral":
- 		case "moonshot":
- 		case "minimax":
+		case "mistral":
+		case "moonshot":
+		case "minimax":
 
 file cli/src/config/types.ts
 label export {
-
- 	bedrockProviderSchema,
- 	vertexProviderSchema,
- 	geminiProviderSchema,
+	bedrockProviderSchema,
+	vertexProviderSchema,
+	geminiProviderSchema,
 +	geminiCliProviderSchema,
- 	mistralProviderSchema,
- 	moonshotProviderSchema,
- 	minimaxProviderSchema,
+	mistralProviderSchema,
+	moonshotProviderSchema,
+	minimaxProviderSchema,
 
+file cli/src/config/types.ts
 label export {
-
- 	type BedrockProviderConfig,
- 	type VertexProviderConfig,
- 	type GeminiProviderConfig,
+	type BedrockProviderConfig,
+	type VertexProviderConfig,
+	type GeminiProviderConfig,
 +	type GeminiCliProviderConfig,
- 	type MistralProviderConfig,
- 	type MoonshotProviderConfig,
- 	type MinimaxProviderConfig,
+	type MistralProviderConfig,
+	type MoonshotProviderConfig,
+	type MinimaxProviderConfig,
+
+file cli/src/constants/providers/__tests__/models.test.ts
+label describe("Static Provider Models", () => {
+			"fireworks",
+			"featherless",
+			"claude-code",
++			"gemini-cli",
+		]
+
+		it.each(staticProviders)("should return non-empty models for %s provider", (provider) => {
 
 file cli/src/constants/providers/labels.ts
 label export const PROVIDER_LABELS: Record<ProviderName, string> = {
-
- 	deepinfra: "DeepInfra",
- 	"io-intelligence": "IO Intelligence",
- 	"qwen-code": "Qwen Code",
+	deepinfra: "DeepInfra",
+	"io-intelligence": "IO Intelligence",
+	"qwen-code": "Qwen Code",
 +	"gemini-cli": "Gemini CLI",
- 	zai: "Zai",
- 	minimax: "MiniMax",
- 	unbound: "Unbound",
+	zai: "Zai",
+	minimax: "MiniMax",
+	unbound: "Unbound",
 
 file cli/src/constants/providers/models.ts
 label import {
-
- 	rooDefaultModelId,
- 	claudeCodeModels,
- 	claudeCodeDefaultModelId,
+	rooDefaultModelId,
+	claudeCodeModels,
+	claudeCodeDefaultModelId,
 +	geminiCliModels,
 +	geminiCliDefaultModelId,
- 	minimaxModels,
- 	minimaxDefaultModelId,
- 	ovhCloudAiEndpointsDefaultModelId,
+	minimaxModels,
+	minimaxDefaultModelId,
+	ovhCloudAiEndpointsDefaultModelId,
 
+file cli/src/constants/providers/models.ts
 label export const PROVIDER_TO_ROUTER_NAME: Record<ProviderName, RouterName | null> =
-
- 	featherless: null,
- 	roo: null,
- 	"claude-code": null,
+	featherless: null,
+	roo: null,
+	"claude-code": null,
 +	"gemini-cli": null,
- 	"virtual-quota-fallback": null,
- 	huggingface: null,
- 	inception: null,
+	"virtual-quota-fallback": null,
+	huggingface: null,
+	inception: null,
 
+file cli/src/constants/providers/models.ts
 label export const PROVIDER_MODEL_FIELD: Record<ProviderName, string | null> = {
-
- 	featherless: null,
- 	roo: null,
- 	"claude-code": null,
+	featherless: null,
+	roo: null,
+	"claude-code": null,
 +	"gemini-cli": null,
- 	"virtual-quota-fallback": null,
- 	huggingface: null,
- 	inception: "inceptionLabsModelId",
+	"virtual-quota-fallback": null,
+	huggingface: null,
+	inception: "inceptionLabsModelId",
 
+file cli/src/constants/providers/models.ts
 label export const DEFAULT_MODEL_IDS: Partial<Record<ProviderName, string>> = {
-
- 	minimax: "MiniMax-M2",
- 	zai: internationalZAiDefaultModelId,
- 	roo: rooDefaultModelId,
+	minimax: "MiniMax-M2",
+	zai: internationalZAiDefaultModelId,
+	roo: rooDefaultModelId,
 +	"gemini-cli": geminiCliDefaultModelId,
- 	ovhcloud: ovhCloudAiEndpointsDefaultModelId,
- }
- 
+	ovhcloud: ovhCloudAiEndpointsDefaultModelId,
+}
 
+
+file cli/src/constants/providers/models.ts
 label export function getModelsByProvider(params: {
-
- 				models: claudeCodeModels as ModelRecord,
- 				defaultModel: claudeCodeDefaultModelId,
- 			}
+				models: claudeCodeModels as ModelRecord,
+				defaultModel: claudeCodeDefaultModelId,
+			}
 +		case "gemini-cli":
 +			return {
 +				models: geminiCliModels as ModelRecord,
 +				defaultModel: geminiCliDefaultModelId,
 +			}
- 		default:
- 			// For providers without static models (e.g., vscode-lm, fake-ai, virtual-quota-fallback)
- 			return {
+		default:
+			// For providers without static models (e.g., vscode-lm, fake-ai, virtual-quota-fallback)
+			return {
 
 file cli/src/constants/providers/settings.ts
 label export const FIELD_REGISTRY: Record<string, FieldMetadata> = {
+		placeholder: "Enter OAuth credentials path...",
+	},
 
- 		placeholder: "Enter OAuth credentials path...",
- 	},
- 
 +	// Gemini CLI fields
 +	geminiCliOAuthPath: {
 +		label: "OAuth Credentials Path",
@@ -115,52 +181,50 @@ label export const FIELD_REGISTRY: Record<string, FieldMetadata> = {
 +		placeholder: "Enter project ID...",
 +	},
 +
- 	// ZAI fields
- 	zaiApiKey: {
- 		label: "API Key",
+	// ZAI fields
+	zaiApiKey: {
+		label: "API Key",
 
+file cli/src/constants/providers/settings.ts
 label export const getProviderSettings = (provider: ProviderName, config: ProviderSett
+		case "qwen-code":
+			return [createFieldConfig("qwenCodeOauthPath", config, "~/.qwen/oauth_creds.json")]
 
- 		case "qwen-code":
- 			return [createFieldConfig("qwenCodeOauthPath", config, "~/.qwen/oauth_creds.json")]
- 
 +		case "gemini-cli":
 +			return [
 +				createFieldConfig("geminiCliOAuthPath", config, "~/.gemini/oauth_creds.json"),
 +				createFieldConfig("geminiCliProjectId", config),
 +			]
 +
- 		case "zai":
- 			return [
- 				createFieldConfig("zaiApiKey", config),
+		case "zai":
+			return [
+				createFieldConfig("zaiApiKey", config),
 
+file cli/src/constants/providers/settings.ts
 label export const PROVIDER_DEFAULT_MODELS: Record<ProviderName, string> = {
-
- 	deepinfra: "meta-llama/Meta-Llama-3.1-70B-Instruct",
- 	"io-intelligence": "gpt-4o",
- 	"qwen-code": "qwen-coder-plus-latest",
-+	"gemini-cli": "gemini-2.5-flash",
- 	zai: "gpt-4o",
- 	unbound: "gpt-4o",
- 	requesty: "gpt-4o",
+	deepinfra: "meta-llama/Meta-Llama-3.1-70B-Instruct",
+	"io-intelligence": "gpt-4o",
+	"qwen-code": "qwen-coder-plus-latest",
++	"gemini-cli": "gemini-1.5-pro-latest",
+	zai: "gpt-4o",
+	unbound: "gpt-4o",
+	requesty: "gpt-4o",
 
 file cli/src/constants/providers/validation.ts
 label export const PROVIDER_REQUIRED_FIELDS: Record<ProviderName, string[]> = {
-
- 	deepinfra: ["deepInfraApiKey", "deepInfraModelId"],
- 	"io-intelligence": ["ioIntelligenceApiKey", "ioIntelligenceModelId"],
- 	"qwen-code": ["qwenCodeOauthPath", "apiModelId"],
+	deepinfra: ["deepInfraApiKey", "deepInfraModelId"],
+	"io-intelligence": ["ioIntelligenceApiKey", "ioIntelligenceModelId"],
+	"qwen-code": ["qwenCodeOauthPath", "apiModelId"],
 +	"gemini-cli": ["geminiCliOAuthPath", "geminiCliProjectId", "apiModelId"],
- 	zai: ["zaiApiKey", "zaiApiLine", "apiModelId"],
- 	unbound: ["unboundApiKey", "unboundModelId"],
- 	requesty: ["requestyApiKey", "requestyModelId"],
+	zai: ["zaiApiKey", "zaiApiLine", "apiModelId"],
+	unbound: ["unboundApiKey", "unboundModelId"],
+	requesty: ["requestyApiKey", "requestyModelId"],
 
 file packages/core-schemas/src/config/provider.ts
 label export const geminiProviderSchema = baseProviderSchema.extend({
+	enableGrounding: z.boolean().optional(),
+})
 
- 	enableGrounding: z.boolean().optional(),
- })
- 
 +// Gemini CLI provider
 +export const geminiCliProviderSchema = baseProviderSchema.extend({
 +	provider: z.literal("gemini-cli"),
@@ -169,678 +233,230 @@ label export const geminiProviderSchema = baseProviderSchema.extend({
 +	geminiCliProjectId: z.string().optional(),
 +})
 +
- // Mistral provider
- export const mistralProviderSchema = baseProviderSchema.extend({
- 	provider: z.literal("mistral"),
+// Mistral provider
+export const mistralProviderSchema = baseProviderSchema.extend({
+	provider: z.literal("mistral"),
 
+file packages/core-schemas/src/config/provider.ts
 label export const providerConfigSchema = z.discriminatedUnion("provider", [
-
- 	bedrockProviderSchema,
- 	vertexProviderSchema,
- 	geminiProviderSchema,
+	bedrockProviderSchema,
+	vertexProviderSchema,
+	geminiProviderSchema,
 +	geminiCliProviderSchema,
- 	mistralProviderSchema,
- 	moonshotProviderSchema,
- 	minimaxProviderSchema,
+	mistralProviderSchema,
+	moonshotProviderSchema,
+	minimaxProviderSchema,
 
+file packages/core-schemas/src/config/provider.ts
 label export type InceptionProviderConfig = z.infer<typeof inceptionProviderSchema>
-
- export type BedrockProviderConfig = z.infer<typeof bedrockProviderSchema>
- export type VertexProviderConfig = z.infer<typeof vertexProviderSchema>
- export type GeminiProviderConfig = z.infer<typeof geminiProviderSchema>
+export type BedrockProviderConfig = z.infer<typeof bedrockProviderSchema>
+export type VertexProviderConfig = z.infer<typeof vertexProviderSchema>
+export type GeminiProviderConfig = z.infer<typeof geminiProviderSchema>
 +export type GeminiCliProviderConfig = z.infer<typeof geminiCliProviderSchema>
- export type MistralProviderConfig = z.infer<typeof mistralProviderSchema>
- export type MoonshotProviderConfig = z.infer<typeof moonshotProviderSchema>
- export type MinimaxProviderConfig = z.infer<typeof minimaxProviderSchema>
+export type MistralProviderConfig = z.infer<typeof mistralProviderSchema>
+export type MoonshotProviderConfig = z.infer<typeof moonshotProviderSchema>
+export type MinimaxProviderConfig = z.infer<typeof minimaxProviderSchema>
 
 file packages/types/src/provider-settings.ts
 label export const providerNames = [
-
- 	"featherless",
- 	"fireworks",
- 	"gemini",
+	"featherless",
+	"fireworks",
+	"gemini",
 +	"gemini-cli",
- 	"groq",
- 	"mistral",
- 	"moonshot",
- 	"minimax",
- 	"openai-codex",
- 	"openai-native",
- 	"openai-responses", // kilocode_change
- 	"qwen-code",
- 	"roo",
- 	// kilocode_change start
- 	"kilocode",
- 	"minimax",
-+	"gemini-cli",
- 	"virtual-quota-fallback",
- 	"synthetic",
- 	"inception",
+	"groq",
+	"mistral",
+	"moonshot",
 
+file packages/types/src/provider-settings.ts
+label export const providerNames = [
+	// kilocode_change start
+	"kilocode",
+	"minimax",
++	"gemini-cli",
+	"virtual-quota-fallback",
+	"synthetic",
+	"inception",
+
+file packages/types/src/provider-settings.ts
 label const geminiSchema = apiModelIdProviderModelSchema.extend({
+	enableGrounding: z.boolean().optional(),
+})
 
- 	enableGrounding: z.boolean().optional(),
- })
- 
++// kilocode_change start
 +const geminiCliSchema = apiModelIdProviderModelSchema.extend({
 +	geminiCliOAuthPath: z.string().optional(),
 +	geminiCliProjectId: z.string().optional(),
 +})
++// kilocode_change end
 +
- const openAiCodexSchema = apiModelIdProviderModelSchema.extend({
- 	// No additional settings needed - uses OAuth authentication
- })
+const openAiCodexSchema = apiModelIdProviderModelSchema.extend({
+	// No additional settings needed - uses OAuth authentication
+})
 
+file packages/types/src/provider-settings.ts
 label export const providerSettingsSchemaDiscriminated = z.discriminatedUnion("apiProv
-
- 	fakeAiSchema.merge(z.object({ apiProvider: z.literal("fake-ai") })),
- 	xaiSchema.merge(z.object({ apiProvider: z.literal("xai") })),
- 	// kilocode_change start
+	fakeAiSchema.merge(z.object({ apiProvider: z.literal("fake-ai") })),
+	xaiSchema.merge(z.object({ apiProvider: z.literal("xai") })),
+	// kilocode_change start
 +	geminiCliSchema.merge(z.object({ apiProvider: z.literal("gemini-cli") })),
- 	kilocodeSchema.merge(z.object({ apiProvider: z.literal("kilocode") })),
- 	virtualQuotaFallbackSchema.merge(z.object({ apiProvider: z.literal("virtual-quota-fallback") })),
- 	syntheticSchema.merge(z.object({ apiProvider: z.literal("synthetic") })),
+	kilocodeSchema.merge(z.object({ apiProvider: z.literal("kilocode") })),
+	virtualQuotaFallbackSchema.merge(z.object({ apiProvider: z.literal("virtual-quota-fallback") })),
+	syntheticSchema.merge(z.object({ apiProvider: z.literal("synthetic") })),
 
+file packages/types/src/provider-settings.ts
 label export const providerSettingsSchema = z.object({
-
- 	...lmStudioSchema.shape,
- 	...geminiSchema.shape,
- 	// kilocode_change start
+	...lmStudioSchema.shape,
+	...geminiSchema.shape,
+	// kilocode_change start
 +	...geminiCliSchema.shape,
- 	...kilocodeSchema.shape,
- 	...virtualQuotaFallbackSchema.shape,
- 	...syntheticSchema.shape,
+	...kilocodeSchema.shape,
+	...virtualQuotaFallbackSchema.shape,
+	...syntheticSchema.shape,
 
+file packages/types/src/provider-settings.ts
 label export const modelIdKeysByProvider: Record<TypicalProvider, ModelIdKey> = {
-
- 	ollama: "ollamaModelId",
- 	lmstudio: "lmStudioModelId",
- 	gemini: "apiModelId",
+	ollama: "ollamaModelId",
+	lmstudio: "lmStudioModelId",
+	gemini: "apiModelId",
 +	"gemini-cli": "apiModelId",
- 	mistral: "apiModelId",
- 	moonshot: "apiModelId",
- 	minimax: "apiModelId",
+	mistral: "apiModelId",
+	moonshot: "apiModelId",
+	minimax: "apiModelId",
 
-label export const MODELS_BY_PROVIDER: Record<
+file packages/types/src/provider-settings.ts
+label export const getApiProtocol = (provider: ProviderName | undefined, modelId?: str
+ */
 
- 		| "openai"
- 		| "openai-responses" // kilocode_change
- 		| "gemini"
-+    | "gemini-cli"
- 	>,
- 	{ id: ProviderName; label: string; models: string[] }
- > = {
-
-file packages/types/src/providers/gemini-cli.ts
-
-+import type { ModelInfo } from '../model.js';
-+
-+export type GeminiCliModelId = keyof typeof geminiCliModels;
-+export const geminiCliDefaultModelId: GeminiCliModelId = 'gemini-2.5-flash';
-+export const geminiCliModels = {
-+  'gemini-3-pro-preview': {
-+    maxTokens: 65_536,
-+    contextWindow: 1_048_576,
-+    supportsImages: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: "xml",
-+    supportsPromptCache: true,
-+    inputPrice: 0,
-+    outputPrice: 0,
-+    maxThinkingTokens: 65_536,
-+    supportsReasoningEffort: ['low', 'high'],
-+  },
-+  'gemini-3-flash-preview': {
-+    maxTokens: 65_536,
-+    contextWindow: 1_048_576,
-+    supportsImages: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: "xml",
-+    supportsPromptCache: true,
-+    inputPrice: 0,
-+    outputPrice: 0,
-+    maxThinkingTokens: 65_536,
-+    supportsReasoningEffort: ['minimal', 'low', 'medium', 'high'],
-+  },
-+  'gemini-2.5-pro': {
-+    maxTokens: 64_000,
-+    contextWindow: 1_048_576,
-+    supportsImages: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: "xml",
-+    supportsPromptCache: true,
-+    inputPrice: 0,
-+    outputPrice: 0,
-+    maxThinkingTokens: 32_768,
-+    supportsReasoningBudget: true,
-+    requiredReasoningBudget: true,
-+  },
-+  'gemini-2.5-flash': {
-+    maxTokens: 64_000,
-+    contextWindow: 1_048_576,
-+    supportsImages: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: "xml",
-+    supportsPromptCache: true,
-+    inputPrice: 0,
-+    outputPrice: 0,
-+    maxThinkingTokens: 32_768,
-+    supportsReasoningBudget: true,
-+    requiredReasoningBudget: true,
-+  },
-+  'gemini-2.5-flash-lite': {
-+    maxTokens: 64_000,
-+    contextWindow: 1_048_576,
-+    supportsImages: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: "xml",
-+    supportsPromptCache: true,
-+    inputPrice: 0,
-+    outputPrice: 0,
-+    maxThinkingTokens: 32_768,
-+    supportsReasoningBudget: true,
-+    requiredReasoningBudget: true,
-+  },
-+} as const satisfies Record<string, ModelInfo>;
+export const MODELS_BY_PROVIDER: Record<
++	Exclude<ProviderName, "fake-ai" | "human-relay" | "gemini-cli" | "openai" | "gemini">,
+-	Exclude<ProviderName, "fake-ai" | "human-relay" | "openai" | "gemini">,
+	{ id: ProviderName; label: string; models: string[] }
+> = {
+	anthropic: {
 
 file packages/types/src/providers/index.ts
 label export * from "./featherless.js"
-
- export * from "./fireworks.js"
- export * from "./gemini.js"
- // kilocode_change start
+export * from "./fireworks.js"
+export * from "./gemini.js"
+// kilocode_change start
 +export * from "./gemini-cli.js"
- export * from "./ovhcloud.js"
- export * from "./synthetic.js"
- export * from "./inception.js"
+export * from "./ovhcloud.js"
+export * from "./synthetic.js"
+export * from "./inception.js"
 
+file packages/types/src/providers/index.ts
 label export function getProviderDefaultModelId(
-
- 		case "vercel-ai-gateway":
- 			return vercelAiGatewayDefaultModelId
- 		case "anthropic":
+		case "vercel-ai-gateway":
+			return vercelAiGatewayDefaultModelId
+		case "anthropic":
 +		case "gemini-cli":
- 		case "human-relay":
- 		case "fake-ai":
- 		default:
+		case "human-relay":
+		case "fake-ai":
+		default:
 
 file src/api/index.ts
-label import {
-
- 	LiteLLMHandler,
- 	// kilocode_change start
- 	VirtualQuotaFallbackHandler,
-+	GeminiCliHandler,
- 	SyntheticHandler,
- 	OVHcloudAIEndpointsHandler,
- 	SapAiCoreHandler,
-
 label export function buildApiHandler(configuration: ProviderSettings): ApiHandler {
-
- 		// kilocode_change start
- 		case "kilocode":
- 			return new KilocodeOpenrouterHandler(options)
+		// kilocode_change start
+		case "kilocode":
+			return new KilocodeOpenrouterHandler(options)
 +		case "gemini-cli":
 +			return new GeminiCliHandler(options)
- 		case "virtual-quota-fallback":
- 			return new VirtualQuotaFallbackHandler(options)
- 		// kilocode_change end
+		case "virtual-quota-fallback":
+			return new VirtualQuotaFallbackHandler(options)
+		// kilocode_change end
 
-file src/api/providers/gemini-cli.ts
-
-+import { FunctionCallingConfigMode } from '@google/genai';
-+import { geminiCliDefaultModelId, geminiCliModels } from '@roo-code/types';
-+import { readFile, writeFile } from 'fs/promises';
-+import { OAuth2Client } from 'google-auth-library';
-+import { homedir } from 'node:os';
-+import { dirname, join } from 'node:path';
-+import OpenAI from 'openai';
-+import { convertAnthropicMessageToGemini } from '../transform/gemini-format';
-+import { getModelParams } from '../transform/model-params';
-+import { BaseProvider } from './base-provider';
-+
-+import type { Anthropic } from '@anthropic-ai/sdk';
-+import type { GeminiCliModelId } from '@roo-code/types';
-+import type { ApiHandlerOptions } from '../../shared/api';
-+import type { ApiHandlerCreateMessageMetadata, SingleCompletionHandler } from '../index';
-+import type { ApiStream } from '../transform/stream';
-+
-+const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
-+const CODE_ASSIST_API_VERSION = 'v1internal';
-+const OAUTH_CLIENT_ID = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
-+const OAUTH_CLIENT_SECRET = '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';
-+const OAUTH_REDIRECT_URI = 'http://localhost:45289';
-+const TOKEN_EXPIRY_BUFFER_MS = 60_000;
-+
-+interface OAuthCredentials {
-+  readonly access_token: string;
-+  readonly refresh_token: string;
-+  readonly token_type: string;
-+  readonly expiry_date: number;
-+}
-+
-+function Retry() {
-+  return function (_a: any, _b: string, descriptor: PropertyDescriptor) {
-+    const originalMethod = descriptor.value;
-+
-+    descriptor.value = function (...args: any[]) {
-+      if (originalMethod.constructor.name === 'AsyncGeneratorFunction') {
-+        return async function* (this: any) {
-+          while (true) {
-+            try {
-+              const iterator = originalMethod.apply(this, args);
-+              yield* iterator;
-+              return;
-+            } catch (error: any) {
-+              if (await handleRetryLogic(error)) continue;
-+              throw error;
-+            }
-+          }
-+        }.call(this);
-+      }
-+      return (async () => {
-+        while (true) {
-+          try {
-+            return await originalMethod.apply(this, args);
-+          } catch (error: any) {
-+            if (await handleRetryLogic(error)) continue;
-+            throw error;
-+          }
-+        }
-+      })();
-+    };
-+
-+    async function handleRetryLogic(error: any): Promise<boolean> {
-+      if (error.response?.status === 429) {
-+        const message = typeof error.response.data === 'string' ? error.response.data : error.message;
-+        const isRateLimit = message.includes('RESOURCE_EXHAUSTED') && message.includes('RATE_LIMIT_EXCEEDED');
-+
-+        if (isRateLimit) {
-+          const delayMatch = message.match(/(\d+)s/);
-+          const delayMs = delayMatch ? parseInt(delayMatch[1], 10) * 1000 + 1000 : 10000;
-+          await new Promise((resolve) => setTimeout(resolve, delayMs));
-+          return true;
-+        }
-+      }
-+      return false;
-+    }
-+    return descriptor;
-+  };
-+}
-+
-+export class GeminiCliHandler extends BaseProvider implements SingleCompletionHandler {
-+  protected options: ApiHandlerOptions;
-+  private authClient: OAuth2Client;
-+  private credentials?: OAuthCredentials;
-+  private projectId?: string;
-+  private readonly credPath: string;
-+
-+  public constructor(options: ApiHandlerOptions) {
-+    super();
-+    this.options = options;
-+    this.authClient = new OAuth2Client(OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, OAUTH_REDIRECT_URI);
-+    this.credPath = options.geminiCliOAuthPath || join(homedir(), '.gemini', 'oauth_creds.json');
-+  }
-+
-+  @Retry()
-+  public async *createMessage(
-+    systemInstruction: string,
-+    messages: Anthropic.Messages.MessageParam[],
-+    metadata?: ApiHandlerCreateMessageMetadata,
-+  ): ApiStream {
-+    const { id: model, info, reasoning: thinkingConfig, maxTokens } = this.getModel();
-+
-+    const toolIdToName = new Map<string, string>();
-+    const contents = messages.flatMap((m) => {
-+      if (Array.isArray(m.content)) {
-+        for (const block of m.content) {
-+          if (block.type === 'tool_use') toolIdToName.set(block.id, block.name);
-+        }
-+      }
-+      return convertAnthropicMessageToGemini(m, {
-+        includeThoughtSignatures: !!thinkingConfig,
-+        toolIdToName,
-+      });
-+    });
-+
-+    await this.ensureAuthenticated();
-+    const projectId = await this.discoverProjectId();
-+
-+    const requestBody: any = {
-+      model,
-+      project: projectId,
-+      request: {
-+        contents: [{ role: 'user', parts: [{ text: systemInstruction }] }, ...contents],
-+        generationConfig: {
-+          temperature: this.options.modelTemperature ?? 0.7,
-+          maxOutputTokens: this.options.modelMaxTokens ?? maxTokens ?? 8192,
-+          ...(thinkingConfig ? { thinkingConfig } : {}),
-+        },
-+      },
-+    };
-+
-+    if (this.shouldIncludeTools(info, metadata)) {
-+      requestBody.request.tools = [
-+        {
-+          functionDeclarations: metadata!.tools!.map((tool) => {
-+            const fn = (tool as OpenAI.ChatCompletionFunctionTool).function;
-+            return { name: fn.name, description: fn.description, parameters: fn.parameters };
-+          }),
-+        },
-+      ];
-+      if (metadata!.tool_choice) {
-+        requestBody.request.toolConfig = this.configureToolChoice(metadata!.tool_choice);
-+      }
-+    }
-+
-+    const controller = new AbortController();
-+    const response = await this.authClient.request({
-+      url: this.getApiUrl('streamGenerateContent'),
-+      method: 'POST',
-+      params: { alt: 'sse' },
-+      headers: { 'Content-Type': 'application/json' },
-+      responseType: 'stream',
-+      data: requestBody,
-+      signal: controller.signal,
-+    });
-+
-+    let lastUsage: any;
-+    let toolCallCounter = 0;
-+
-+    try {
-+      const stream = this.parseSSEStream(response.data as NodeJS.ReadableStream);
-+      for await (const jsonData of stream) {
-+        const responseData = jsonData.response || jsonData;
-+        const candidate = responseData.candidates?.[0];
-+
-+        if (candidate?.content?.parts) {
-+          for (const part of candidate.content.parts) {
-+            if (part.text) {
-+              yield { type: part.thought ? 'reasoning' : 'text', text: part.text };
-+            } else if (part.functionCall) {
-+              const callId = `${part.functionCall.name}-${toolCallCounter++}`;
-+              const index = toolCallCounter - 1;
-+              yield {
-+                type: 'tool_call_partial',
-+                index,
-+                id: callId,
-+                name: part.functionCall.name,
-+                arguments: JSON.stringify(part.functionCall.args),
-+              };
-+            }
-+          }
-+        }
-+        if (responseData.usageMetadata) lastUsage = responseData.usageMetadata;
-+        if (candidate?.finishReason) break;
-+      }
-+    } finally {
-+      controller.abort();
-+    }
-+
-+    if (lastUsage) {
-+      yield {
-+        type: 'usage',
-+        inputTokens: lastUsage.promptTokenCount ?? 0,
-+        outputTokens: lastUsage.candidatesTokenCount ?? 0,
-+        cacheReadTokens: lastUsage.cachedContentTokenCount,
-+        reasoningTokens: lastUsage.thoughtsTokenCount,
-+        totalCost: 0,
-+      };
-+    }
-+  }
-+
-+  @Retry()
-+  public async completePrompt(prompt: string): Promise<string> {
-+    const { id: model } = this.getModel();
-+
-+    await this.ensureAuthenticated();
-+    const projectId = await this.discoverProjectId();
-+    const requestBody = {
-+      model,
-+      project: projectId,
-+      request: {
-+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-+        generationConfig: { temperature: this.options.modelTemperature ?? 0.7 },
-+      },
-+    };
-+
-+    const response = await this.authClient.request({
-+      url: this.getApiUrl('generateContent'),
-+      method: 'POST',
-+      headers: { 'Content-Type': 'application/json' },
-+      data: requestBody,
-+    });
-+
-+    const responseData = (response.data as any).response || response.data;
-+    return (
-+      responseData.candidates?.[0]?.content?.parts
-+        ?.filter((p: any) => p.text && !p.thought)
-+        ?.map((p: any) => p.text)
-+        ?.join('') || ''
-+    );
-+  }
-+
-+  public override getModel() {
-+    const modelId = this.options.apiModelId?.replace(':thinking', '') || geminiCliDefaultModelId;
-+    const id = (modelId in geminiCliModels ? modelId : geminiCliDefaultModelId) as GeminiCliModelId;
-+    const info = geminiCliModels[id];
-+    return { id, info, ...getModelParams({ format: 'gemini', modelId: id, model: info, settings: this.options }) };
-+  }
-+
-+  private getApiUrl(method: string): string {
-+    return `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:${method}`;
-+  }
-+
-+  private shouldIncludeTools(info: any, metadata?: ApiHandlerCreateMessageMetadata): boolean {
-+    return !!(info.supportsNativeTools && metadata?.tools?.length && metadata.toolProtocol !== 'xml');
-+  }
-+
-+  private configureToolChoice(choice: ApiHandlerCreateMessageMetadata['tool_choice']) {
-+    let mode = FunctionCallingConfigMode.AUTO;
-+    let allowedFunctionNames: string[] | undefined;
-+
-+    if (choice === 'none') {
-+      mode = FunctionCallingConfigMode.NONE;
-+    } else if (choice === 'required') {
-+      mode = FunctionCallingConfigMode.ANY;
-+    } else if (typeof choice === 'object' && choice.type === 'function') {
-+      mode = FunctionCallingConfigMode.ANY;
-+      allowedFunctionNames = [choice.function.name];
-+    }
-+    return { functionCallingConfig: { mode, ...(allowedFunctionNames ? { allowedFunctionNames } : {}) } };
-+  }
-+
-+  private async ensureAuthenticated(): Promise<void> {
-+    if (!this.credentials) {
-+      const data = await readFile(this.credPath, 'utf-8');
-+      this.credentials = JSON.parse(data);
-+      this.authClient.setCredentials(this.credentials!);
-+    }
-+
-+    const isExpired = this.credentials!.expiry_date - TOKEN_EXPIRY_BUFFER_MS < Date.now();
-+    if (isExpired) {
-+      const { credentials } = await this.authClient.refreshAccessToken();
-+      this.credentials = {
-+        access_token: credentials.access_token!,
-+        refresh_token: credentials.refresh_token || this.credentials!.refresh_token,
-+        token_type: credentials.token_type || 'Bearer',
-+        expiry_date: credentials.expiry_date || Date.now() + 3600000,
-+      };
-+      await writeFile(this.credPath, JSON.stringify(this.credentials, null, 2));
-+      this.authClient.setCredentials(this.credentials);
-+    }
-+  }
-+
-+  private async discoverProjectId(): Promise<string> {
-+    if (this.projectId) return this.projectId;
-+
-+    const projectIdOptions = this.options.geminiCliProjectId?.trim();
-+    if (projectIdOptions) return (this.projectId = projectIdOptions);
-+
-+    if (process.env.GOOGLE_CLOUD_PROJECT) {
-+      return (this.projectId = process.env.GOOGLE_CLOUD_PROJECT);
-+    }
-+
-+    try {
-+      const envPath = join(dirname(this.credPath), '.env');
-+      const content = await readFile(envPath, 'utf-8');
-+      const match = content.match(/^GOOGLE_CLOUD_PROJECT=(.*)$/m);
-+      if (match) return (this.projectId = match[1].replace(/^["']|["']$/g, '').trim());
-+    } catch {}
-+
-+    const metadata = {
-+      ideType: 'IDE_UNSPECIFIED',
-+      platform: 'PLATFORM_UNSPECIFIED',
-+      pluginType: 'GEMINI',
-+      duetProject: '',
-+    };
-+
-+    try {
-+      const load = await this.callEndpoint('loadCodeAssist', { cloudaicompanionProject: '', metadata });
-+      if (load.cloudaicompanionProject) return (this.projectId = load.cloudaicompanionProject);
-+
-+      const tierId = load.allowedTiers?.find((t: any) => t.isDefault)?.id || 'free-tier';
-+      let onboard = await this.callEndpoint('onboardUser', { tierId, cloudaicompanionProject: '', metadata });
-+
-+      for (let i = 0; i < 30 && !onboard.done; i++) {
-+        await new Promise((r) => setTimeout(r, 2000));
-+        onboard = await this.callEndpoint('onboardUser', { tierId, cloudaicompanionProject: '', metadata });
-+      }
-+      return (this.projectId = onboard.response?.cloudaicompanionProject?.id || '');
-+    } catch (error: any) {
-+      throw new Error(`Gemini CLI discoverProjectId failed: ${error.response?.data || error.message}`);
-+    }
-+  }
-+
-+  private async callEndpoint(method: string, data: any, retry = true): Promise<any> {
-+    try {
-+      const res = await this.authClient.request({
-+        url: this.getApiUrl(method),
-+        method: 'POST',
-+        headers: { 'Content-Type': 'application/json' },
-+        data,
-+      });
-+      return res.data;
-+    } catch (error: any) {
-+      if (error.response?.status === 401 && retry) {
-+        await this.ensureAuthenticated();
-+        return this.callEndpoint(method, data, false);
-+      }
-+      throw error;
-+    }
-+  }
-+
-+  private async *parseSSEStream(stream: NodeJS.ReadableStream): AsyncGenerator<any> {
-+    const decoder = new TextDecoder();
-+    let buffer = '';
-+
-+    for await (const chunk of stream) {
-+      buffer += decoder.decode(chunk as Buffer, { stream: true });
-+      let boundary = buffer.indexOf('\n');
-+
-+      while (boundary !== -1) {
-+        const line = buffer.slice(0, boundary).trim();
-+        buffer = buffer.slice(boundary + 1);
-+
-+        if (line.startsWith('data: ')) {
-+          const data = line.slice(6);
-+          if (data === '[DONE]') return;
-+          try {
-+            yield JSON.parse(data);
-+          } catch {}
-+        }
-+        boundary = buffer.indexOf('\n');
-+      }
-+    }
-+  }
-+}
+file src/api/index.ts
+label export function buildApiHandler(configuration: ProviderSettings): ApiHandler {
+		case "baseten":
+			return new BasetenHandler(options)
+		default:
++			apiProvider satisfies "gemini-cli" | undefined
+-			apiProvider satisfies undefined
+			return new AnthropicHandler(options)
+	}
+}
 
 file src/api/providers/index.ts
 label export { UnboundHandler } from "./unbound"
-
- export { VertexHandler } from "./vertex"
- // kilocode_change start
- export { OVHcloudAIEndpointsHandler } from "./ovhcloud"
+export { VertexHandler } from "./vertex"
+// kilocode_change start
+export { OVHcloudAIEndpointsHandler } from "./ovhcloud"
 +export { GeminiCliHandler } from "./gemini-cli"
- export { VirtualQuotaFallbackHandler } from "./virtual-quota-fallback"
- export { SyntheticHandler } from "./synthetic"
- export { InceptionLabsHandler } from "./inception"
+export { VirtualQuotaFallbackHandler } from "./virtual-quota-fallback"
+export { SyntheticHandler } from "./synthetic"
+export { InceptionLabsHandler } from "./inception"
 
 file src/shared/checkExistApiConfig.ts
 label export function checkExistKey(config: ProviderSettings | undefined) {
-
- 	// Special case for human-relay, fake-ai, claude-code, openai-codex, qwen-code, roo and kilocode providers which don't need any configuration.
- 	if (
- 		config.apiProvider &&
--		["human-relay", "fake-ai", "claude-code", "openai-codex", "qwen-code", "roo", "kilocode"].includes(
-+		["human-relay", "fake-ai", "claude-code", "openai-codex", "qwen-code", "roo", "kilocode", "gemini-cli"].includes(
- 			config.apiProvider,
- 		) // kilocode_change: add kilocode for anonymous access
- 	) {
+	// Special case for human-relay, fake-ai, claude-code, qwen-code, and roo providers which don't need any configuration.
+	if (
+		config.apiProvider &&
++		["human-relay", "fake-ai", "claude-code", "qwen-code", "roo", "gemini-cli"].includes(config.apiProvider) // kilocode_change: add gemini-cli
+-		["human-relay", "fake-ai", "claude-code", "qwen-code", "roo"].includes(config.apiProvider)
+	) {
+		return true
+	}
 
 file webview-ui/src/components/kilocode/hooks/useProviderModels.ts
 label import {
-
- 	litellmDefaultModelId,
- 	qwenCodeModels,
- 	qwenCodeDefaultModelId,
+	litellmDefaultModelId,
+	qwenCodeModels,
+	qwenCodeDefaultModelId,
 +	geminiCliModels,
- 	claudeCodeModels,
- 	claudeCodeDefaultModelId,
- 	doubaoModels,
+	claudeCodeModels,
+	claudeCodeDefaultModelId,
+	doubaoModels,
 
+file webview-ui/src/components/kilocode/hooks/useProviderModels.ts
 label export const getModelsByProvider = ({
-
- 				defaultModel: qwenCodeDefaultModelId,
- 			}
- 		}
+				defaultModel: qwenCodeDefaultModelId,
+			}
+		}
 +		case "gemini-cli": {
 +			return {
 +				models: geminiCliModels,
 +				defaultModel: geminiDefaultModelId,
 +			}
 +		}
- 		case "anthropic": {
- 			return {
- 				models: anthropicModels,
+		case "anthropic": {
+			return {
+				models: anthropicModels,
 
 file webview-ui/src/components/settings/ApiOptions.tsx
 label import {
-
- 	claudeCodeDefaultModelId,
- 	qwenCodeDefaultModelId,
- 	geminiDefaultModelId,
+	claudeCodeDefaultModelId,
+	qwenCodeDefaultModelId,
+	geminiDefaultModelId,
 +	geminiCliDefaultModelId,
- 	deepSeekDefaultModelId,
- 	moonshotDefaultModelId,
- 	// kilocode_change start
+	deepSeekDefaultModelId,
+	moonshotDefaultModelId,
+	// kilocode_change start
 
+file webview-ui/src/components/settings/ApiOptions.tsx
 label import {
-
- 	VSCodeLM,
- 	XAI,
- 	// kilocode_change start
+	VSCodeLM,
+	XAI,
+	// kilocode_change start
 +	GeminiCli,
- 	VirtualQuotaFallbackProvider,
- 	Synthetic,
- 	OvhCloudAiEndpoints,
+	VirtualQuotaFallbackProvider,
+	Synthetic,
+	OvhCloudAiEndpoints,
 
+file webview-ui/src/components/settings/ApiOptions.tsx
 label const ApiOptions = ({
-
- 				lmstudio: { field: "lmStudioModelId" },
- 				// kilocode_change start
- 				kilocode: { field: "kilocodeModel", default: kilocodeDefaultModel },
+				lmstudio: { field: "lmStudioModelId" },
+				// kilocode_change start
+				kilocode: { field: "kilocodeModel", default: kilocodeDefaultModel },
 +				"gemini-cli": { field: "apiModelId", default: geminiCliDefaultModelId },
- 				synthetic: { field: "apiModelId", default: syntheticDefaultModelId },
- 				ovhcloud: { field: "ovhCloudAiEndpointsModelId", default: ovhCloudAiEndpointsDefaultModelId },
- 				inception: { field: "inceptionLabsModelId", default: inceptionDefaultModelId },
+				synthetic: { field: "apiModelId", default: syntheticDefaultModelId },
+				ovhcloud: { field: "ovhCloudAiEndpointsModelId", default: ovhCloudAiEndpointsDefaultModelId },
+				inception: { field: "inceptionLabsModelId", default: inceptionDefaultModelId },
 
+file webview-ui/src/components/settings/ApiOptions.tsx
 label const ApiOptions = ({
 
- 
- 		// kilocode_change start
- 		// Providers that don't have documentation pages yet
--		const excludedProviders = ["moonshot", "chutes", "cerebras", "litellm", "zai", "qwen-code", "minimax"]
+		// kilocode_change start
+		// Providers that don't have documentation pages yet
 +		const excludedProviders = [
 +			"gemini-cli",
 +			"moonshot",
@@ -851,136 +467,97 @@ label const ApiOptions = ({
 +			"qwen-code",
 +			"minimax",
 +		]
- 
- 		// Skip documentation link when the provider is excluded because documentation is not available
- 		if (excludedProviders.includes(selectedProvider)) {
+-		const excludedProviders = ["moonshot", "chutes", "cerebras", "litellm", "zai", "qwen-code", "minimax"]
 
+		// Skip documentation link when the provider is excluded because documentation is not available
+		if (excludedProviders.includes(selectedProvider)) {
+
+file webview-ui/src/components/settings/ApiOptions.tsx
 label const ApiOptions = ({
+			)}
 
- 			)}
- 
- 			{/* kilocode_change start */}
+			{/* kilocode_change start */}
 +			{selectedProvider === "gemini-cli" && (
 +				<GeminiCli apiConfiguration={apiConfiguration} setApiConfigurationField={setApiConfigurationField} />
 +			)}
 +
- 			{selectedProvider === "virtual-quota-fallback" && (
- 				<VirtualQuotaFallbackProvider
- 					apiConfiguration={apiConfiguration}
+			{selectedProvider === "virtual-quota-fallback" && (
+				<VirtualQuotaFallbackProvider
+					apiConfiguration={apiConfiguration}
 
 file webview-ui/src/components/settings/constants.ts
 label import {
-
- 	moonshotModels,
- 	// kilocode_change start
- 	// geminiModels,
+	moonshotModels,
+	// kilocode_change start
+	// geminiModels,
 +	geminiCliModels,
- 	// kilocode_change end
- 	mistralModels,
- 	openAiNativeModels,
+	// kilocode_change end
+	mistralModels,
+	openAiNativeModels,
 
+file webview-ui/src/components/settings/constants.ts
 label export const MODELS_BY_PROVIDER: Partial<Record<ProviderName, Record<string, Mod
-
- 	moonshot: moonshotModels,
- 	// kilocode_change start
- 	// gemini: geminiModels,
+	moonshot: moonshotModels,
+	// kilocode_change start
+	// gemini: geminiModels,
 +	"gemini-cli": geminiCliModels,
- 	// kilocode_change end
- 	mistral: mistralModels,
- 	"openai-native": openAiNativeModels,
+	// kilocode_change end
+	mistral: mistralModels,
+	"openai-native": openAiNativeModels,
 
+file webview-ui/src/components/settings/constants.ts
 label export const PROVIDERS = [
-
- 	{ value: "doubao", label: "Doubao", proxy: false },
- 	// kilocode_change start
- 	{ value: "inception", label: "Inception", proxy: false },
+	{ value: "doubao", label: "Doubao", proxy: false },
+	// kilocode_change start
+	{ value: "inception", label: "Inception", proxy: false },
 +	{ value: "gemini-cli", label: "Gemini CLI", proxy: false },
- 	{ value: "virtual-quota-fallback", label: "Virtual Quota Fallback", proxy: false },
- 	{ value: "synthetic", label: "Synthetic", proxy: false },
- 	{ value: "ovhcloud", label: "OVHcloud AI Endpoints", proxy: false },
-
-file webview-ui/src/components/settings/providers/GeminiCli.tsx
-
-+import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
-+import { useCallback } from "react"
-+import { inputEventTransform } from "../transforms"
-+
-+import type { ProviderSettings } from "@roo-code/types"
-+
-+interface GeminiCliProps {
-+	readonly apiConfiguration: ProviderSettings
-+	readonly setApiConfigurationField: (field: keyof ProviderSettings, value: ProviderSettings[keyof ProviderSettings]) => void
-+}
-+
-+export const GeminiCli = ({ apiConfiguration, setApiConfigurationField }: GeminiCliProps) => {
-+	const handleInputChange = useCallback(
-+		<K extends keyof ProviderSettings, E>(
-+			field: K,
-+			transform: (event: E) => ProviderSettings[K] = inputEventTransform,
-+		) =>
-+			(event: E | Event) => {
-+				setApiConfigurationField(field, transform(event as E))
-+			},
-+		[setApiConfigurationField],
-+	)
-+
-+	return (
-+    <>
-+      <VSCodeTextField
-+        value={apiConfiguration?.geminiCliOAuthPath || ""}
-+        onInput={handleInputChange("geminiCliOAuthPath")}
-+        placeholder="~/.gemini/oauth_creds.json"
-+        className="w-full">
-+        <label className="block font-medium mb-1">
-+          OAuth Credentials Path (optional)
-+        </label>
-+      </VSCodeTextField>
-+      <VSCodeTextField
-+        value={apiConfiguration?.geminiCliProjectId || ""}
-+        onInput={handleInputChange("geminiCliProjectId")}
-+        placeholder="leave blank to use from .env"
-+        className="w-full">
-+        <label className="block font-medium mb-1">
-+          OAuth Project Id (optional)
-+        </label>
-+      </VSCodeTextField>
-+    </>
-+	)
-+}
+	{ value: "virtual-quota-fallback", label: "Virtual Quota Fallback", proxy: false },
+	{ value: "synthetic", label: "Synthetic", proxy: false },
+	{ value: "ovhcloud", label: "OVHcloud AI Endpoints", proxy: false },
 
 file webview-ui/src/components/settings/providers/index.ts
 label export { VSCodeLM } from "./VSCodeLM"
-
- export { XAI } from "./XAI"
- // kilocode_change start
- export { OvhCloudAiEndpoints } from "./OvhCloud"
+export { XAI } from "./XAI"
+// kilocode_change start
+export { OvhCloudAiEndpoints } from "./OvhCloud"
 +export { GeminiCli } from "./GeminiCli"
- export { VirtualQuotaFallbackProvider } from "./VirtualQuotaFallbackProvider"
- export { Inception } from "./Inception"
- export { Synthetic } from "./Synthetic"
+export { VirtualQuotaFallbackProvider } from "./VirtualQuotaFallbackProvider"
+export { Inception } from "./Inception"
+export { Synthetic } from "./Synthetic"
 
 file webview-ui/src/components/ui/hooks/useSelectedModel.ts
 label import {
-
- 	geminiModels,
- 	geminiDefaultModelId,
- 	// kilocode_change start
+	geminiModels,
+	geminiDefaultModelId,
+	// kilocode_change start
 +	geminiCliDefaultModelId,
 +	geminiCliModels,
- 	syntheticDefaultModelId,
- 	ovhCloudAiEndpointsDefaultModelId,
- 	inceptionDefaultModelId,
+	syntheticDefaultModelId,
+	ovhCloudAiEndpointsDefaultModelId,
+	inceptionDefaultModelId,
 
+file webview-ui/src/components/ui/hooks/useSelectedModel.ts
 label function getSelectedModel({
-
- 				info: routerModels["kilocode"][invalidOrDefaultModel],
- 			}
- 		}
+				info: routerModels["kilocode"][invalidOrDefaultModel],
+			}
+		}
 +		case "gemini-cli": {
 +			const id = apiConfiguration.apiModelId ?? geminiCliDefaultModelId
 +			const info = geminiCliModels[id as keyof typeof geminiCliModels]
 +			return { id, info }
 +		}
- 		case "virtual-quota-fallback": {
- 			if (virtualQuotaActiveModel) {
- 				return virtualQuotaActiveModel
+		case "virtual-quota-fallback": {
+			if (virtualQuotaActiveModel) {
+				return virtualQuotaActiveModel
+
+file webview-ui/src/components/ui/hooks/useSelectedModel.ts
+label function getSelectedModel({
+		// case "human-relay":
+		// case "fake-ai":
+		default: {
++			provider satisfies "anthropic" | "gemini-cli" | "qwen-code" | "fake-ai" | "human-relay" | "kilocode"
+-			provider satisfies "anthropic" | "qwen-code" | "fake-ai" | "human-relay" | "kilocode"
+			const id = apiConfiguration.apiModelId ?? defaultModelId
+			const baseInfo = anthropicModels[id as keyof typeof anthropicModels]
+
+
