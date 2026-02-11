@@ -510,7 +510,10 @@ file src/api/providers/gemini-cli.ts
 +      model,
 +      project: this.projectId,
 +      request: {
-+        contents: [{ role: 'user', parts: [{ text: systemInstruction }] }, ...contents],
++        systemInstruction: {
++          parts: [{ text: systemInstruction }],
++        },
++        contents,
 +        generationConfig: {
 +          temperature: this.options.modelTemperature ?? 0.7,
 +          maxOutputTokens: this.options.modelMaxTokens ?? maxTokens ?? 8192,
@@ -524,7 +527,11 @@ file src/api/providers/gemini-cli.ts
 +        {
 +          functionDeclarations: metadata!.tools!.map((tool) => {
 +            const fn = (tool as OpenAI.ChatCompletionFunctionTool).function;
-+            return { name: fn.name, description: fn.description, parameters: fn.parameters };
++            return {
++              name: fn.name,
++              description: fn.description,
++              parameters: this.sanitizeSchema(fn.parameters),
++            };
 +          }),
 +        },
 +      ];
@@ -565,7 +572,7 @@ file src/api/providers/gemini-cli.ts
 +                index,
 +                id: callId,
 +                name: part.functionCall.name,
-+                arguments: JSON.stringify(part.functionCall.args),
++                arguments: JSON.stringify(part.functionCall.args || {}),
 +              };
 +            }
 +          }
@@ -634,6 +641,47 @@ file src/api/providers/gemini-cli.ts
 +
 +  private shouldIncludeTools(info: any, metadata?: ApiHandlerCreateMessageMetadata): boolean {
 +    return !!(info.supportsNativeTools && metadata?.tools?.length && metadata.toolProtocol !== 'xml');
++  }
++
++  private sanitizeSchema(schema: any) {
++    if (!schema || typeof schema !== 'object') {
++      return schema;
++    }
++
++    const res: any = Array.isArray(schema) ? [] : {};
++
++    for (const [key, value] of Object.entries(schema)) {
++      if (key === 'type' && Array.isArray(value)) {
++        res[key] = value.find((t) => t !== 'null') || value[0];
++        continue;
++      }
++
++      if (key === 'properties' && typeof value === 'object') {
++        res[key] = Object.fromEntries(Object.entries(value as object).map(([k, v]) => [k, this.sanitizeSchema(v)]));
++        continue;
++      }
++
++      if (key === 'items' && typeof value === 'object') {
++        res[key] = this.sanitizeSchema(value);
++        continue;
++      }
++
++      if (key === 'required' && Array.isArray(value)) {
++        res[key] = value;
++        continue;
++      }
++
++      const forbidden = ['default', 'additionalProperties', '$schema', 'pattern'];
++      if (!forbidden.includes(key)) {
++        res[key] = value;
++      }
++    }
++
++    if (res.type && typeof res.type === 'string') {
++      res.type = res.type.toUpperCase();
++    }
++
++    return res;
 +  }
 +
 +  private configureToolChoice(choice: ApiHandlerCreateMessageMetadata['tool_choice']) {
@@ -949,10 +997,10 @@ file webview-ui/src/components/settings/providers/GeminiCli.tsx
 +      <VSCodeTextField
 +        value={apiConfiguration?.geminiCliProjectId || ""}
 +        onInput={handleInputChange("geminiCliProjectId")}
-+        placeholder="leave blank to use from .env"
++        placeholder="gen-lang-client-0123456789"
 +        className="w-full">
 +        <label className="block font-medium mb-1">
-+          OAuth Project Id (optional)
++          Cloud Project ID (optional)
 +        </label>
 +      </VSCodeTextField>
 +    </>
