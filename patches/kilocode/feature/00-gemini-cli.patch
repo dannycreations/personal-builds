@@ -267,55 +267,6 @@ file src/api/providers/gemini-cli.ts
 +  readonly expiry_date: number;
 +}
 +
-+function Retry() {
-+  return function (_a: any, _b: string, descriptor: PropertyDescriptor) {
-+    const originalMethod = descriptor.value;
-+
-+    descriptor.value = function (...args: any[]) {
-+      if (originalMethod.constructor.name === 'AsyncGeneratorFunction') {
-+        return async function* (this: any) {
-+          while (true) {
-+            try {
-+              const iterator = originalMethod.apply(this, args);
-+              yield* iterator;
-+              return;
-+            } catch (error) {
-+              if (await handleRetryLogic(error)) continue;
-+              throw error;
-+            }
-+          }
-+        }.call(this);
-+      }
-+      return (async () => {
-+        while (true) {
-+          try {
-+            return await originalMethod.apply(this, args);
-+          } catch (error) {
-+            if (await handleRetryLogic(error)) continue;
-+            throw error;
-+          }
-+        }
-+      })();
-+    };
-+
-+    async function handleRetryLogic(error: any): Promise<boolean> {
-+      if (error.response?.status === 429) {
-+        const message = typeof error.response.data === 'string' ? error.response.data : error.message;
-+        const isRateLimit = message.includes('RESOURCE_EXHAUSTED') && message.includes('RATE_LIMIT_EXCEEDED');
-+
-+        if (isRateLimit) {
-+          const delayMatch = message.match(/(\d+)s/);
-+          const delayMs = delayMatch ? parseInt(delayMatch[1], 10) * 1000 + 1000 : 10000;
-+          await new Promise((resolve) => setTimeout(resolve, delayMs));
-+          return true;
-+        }
-+      }
-+      return false;
-+    }
-+    return descriptor;
-+  };
-+}
-+
 +export class GeminiCliHandler extends BaseProvider implements SingleCompletionHandler {
 +  protected options: ApiHandlerOptions;
 +  private authClient: OAuth2Client;
@@ -332,7 +283,6 @@ file src/api/providers/gemini-cli.ts
 +    this.credPath = options.geminiCliOAuthPath || join(homedir(), '.gemini', 'oauth_creds.json');
 +  }
 +
-+  @Retry()
 +  public async *createMessage(
 +    systemInstruction: string,
 +    messages: Anthropic.Messages.MessageParam[],
@@ -511,7 +461,6 @@ file src/api/providers/gemini-cli.ts
 +    }
 +  }
 +
-+  @Retry()
 +  public async completePrompt(prompt: string): Promise<string> {
 +    const { id: model, info } = this.getModel();
 +
@@ -822,8 +771,8 @@ label export const MODELS_BY_PROVIDER: Partial<Record<ProviderName, Record<strin
 
 label export const PROVIDERS = [
 
- 	{ value: "doubao", label: "Doubao", proxy: false },
  	// kilocode_change start
+ 	{ value: "zenmux", label: "ZenMux" },
  	{ value: "inception", label: "Inception", proxy: false },
 +	{ value: "gemini-cli", label: "Gemini CLI", proxy: false },
  	{ value: "virtual-quota-fallback", label: "Virtual Quota Fallback", proxy: false },

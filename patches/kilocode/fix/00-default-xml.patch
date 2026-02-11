@@ -1,0 +1,11 @@
+file src/utils/resolveToolProtocol.ts
+label export function resolveToolProtocol(
+
+ 
+ 	// 2. Always return Native protocol for new tasks
+ 	// All models now support native tools; XML is deprecated
+-	return TOOL_PROTOCOL.NATIVE
++	return TOOL_PROTOCOL.XML
+ }
+ 
+ /**
