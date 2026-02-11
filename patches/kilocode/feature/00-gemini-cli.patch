@@ -568,7 +568,7 @@ file src/api/providers/__tests__/gemini-cli.spec.ts
 +		vi.clearAllMocks()
 +
 +		mockOptions = {
-+			apiModelId: "gemini-1.5-pro-latest",
++			apiModelId: "gemini-2.5-flash",
 +			geminiCliOAuthPath: undefined,
 +			geminiCliProjectId: undefined,
 +		}
