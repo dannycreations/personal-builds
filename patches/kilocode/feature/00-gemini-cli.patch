@@ -1,12 +1,3 @@
-
-file .changeset/remove-gemini-cli-provider.md
-
-----
--"kilo-code": minor
-----
--
--Remove Gemini CLI provider support.
-
 file cli/docs/PROVIDER_CONFIGURATION.md
 label This guide provides detailed information on how to configure each provider in Ki
 
