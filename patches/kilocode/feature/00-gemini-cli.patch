@@ -57,7 +57,7 @@ label export const providerNames = [
  	"minimax",
 +	"gemini-cli",
  	"virtual-quota-fallback",
- 	"synthetic",
+
  	"inception",
 
 label const geminiSchema = apiModelIdProviderModelSchema.extend({
@@ -80,7 +80,7 @@ label export const providerSettingsSchemaDiscriminated = z.discriminatedUnion("a
  	xaiSchema.merge(z.object({ apiProvider: z.literal("xai") })),
  	// kilocode_change start
 +	geminiCliSchema.merge(z.object({ apiProvider: z.literal("gemini-cli") })),
- 	kilocodeSchema.merge(z.object({ apiProvider: z.literal("kilocode") })),
+
  	virtualQuotaFallbackSchema.merge(z.object({ apiProvider: z.literal("virtual-quota-fallback") })),
  	syntheticSchema.merge(z.object({ apiProvider: z.literal("synthetic") })),
 
@@ -90,7 +90,7 @@ label export const providerSettingsSchema = z.object({
  	...geminiSchema.shape,
  	// kilocode_change start
 +	...geminiCliSchema.shape,
- 	...kilocodeSchema.shape,
+
  	...virtualQuotaFallbackSchema.shape,
  	...syntheticSchema.shape,
 
@@ -709,7 +709,7 @@ label const ApiOptions = ({
 
  				lmstudio: { field: "lmStudioModelId" },
  				// kilocode_change start
- 				kilocode: { field: "kilocodeModel", default: kilocodeDefaultModel },
+
 +				"gemini-cli": { field: "apiModelId", default: geminiCliDefaultModelId },
  				synthetic: { field: "apiModelId", default: syntheticDefaultModelId },
  				ovhcloud: { field: "ovhCloudAiEndpointsModelId", default: ovhCloudAiEndpointsDefaultModelId },
