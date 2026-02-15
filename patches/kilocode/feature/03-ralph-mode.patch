@@ -1,56 +1,13 @@
-file .changeset/many-results-read.md
-
-+---
-+"kilo-code": minor
-+---
-+
-+feat(mode): implement Ralph mode for infinite task loops
-
-file findings.md
-
-+# Task Findings & Discoveries
-+
-+## Requirements
-+
-+- Implement Ralph logic for "mistake limit reached" errors.
-+- When mistake limit is reached, if Ralph mode is enabled, automatically restart the task to continue the loop.
-+
-+## Research Findings
-+
-+### Ralph Mode Implementation
-+- Ralph mode is implemented in [`src/core/tools/AttemptCompletionTool.ts`](src/core/tools/AttemptCompletionTool.ts).
-+- It checks `state.alwaysAllowRalph` and `state.ralphEnabled`.
-+- It uses `task.metadata.task` (original prompt) and `task.metadata.images`.
-+- It tracks loop count via `task.metadata.ralphLoopCount`.
-+- It restarts via `provider.createTask` and notifies UI with `newChat`.
-+
-+### Mistake Limit Handling
-+- Located in [`src/core/task/Task.ts`](src/core/task/Task.ts) inside `recursivelyMakeClineRequests`.
-+- Triggered when `consecutiveMistakeCount >= consecutiveMistakeLimit`.
-+- Currently calls `this.ask("mistake_limit_reached", ...)`.
-+
-+## Technical Decisions
-+
-+| Decision                         | Rationale                          |
-+| -------------------------------- | ---------------------------------- |
-+| Integrate Ralph restart into `Task.ts` | To allow automatic recovery from reasoning failures/tool misuse when Ralph mode is active. |
-+| Use existing Ralph metadata | Consistency with `AttemptCompletionTool.ts` for loop tracking and task prompt. |
-+
-+## Resources
-+
-+- [`src/core/task/Task.ts`](src/core/task/Task.ts)
-+- [`src/core/tools/AttemptCompletionTool.ts`](src/core/tools/AttemptCompletionTool.ts)
-
 file packages/types/src/global-settings.ts
 label export const globalSettingsSchema = z.object({
 
  	lastModeExportPath: z.string().optional(),
  	lastModeImportPath: z.string().optional(),
  	appendSystemPrompt: z.string().optional(), // kilocode_change: Custom text to append to system prompt (CLI only)
-+	alwaysAllowRalph: z.boolean().optional(), // kilocode_change
-+	ralphEnabled: z.boolean().optional(), // kilocode_change
-+	ralphLoopLimit: z.number().int().min(0).optional(), // kilocode_change
-+	ralphCompletionDelimiter: z.string().optional(), // kilocode_change
++	alwaysAllowRalph: z.boolean().optional(),
++	ralphEnabled: z.boolean().optional(),
++	ralphLoopLimit: z.number().int().min(0).optional(),
++	ralphCompletionDelimiter: z.string().optional(),
  })
  
  export type GlobalSettings = z.infer<typeof globalSettingsSchema>
@@ -60,9 +17,9 @@ label export const EVALS_SETTINGS: RooCodeSettings = {
  	alwaysAllowModeSwitch: true,
  	alwaysAllowSubtasks: true,
  	alwaysAllowExecute: true,
-+	alwaysAllowRalph: false, // kilocode_change
-+	ralphLoopLimit: 5, // kilocode_change
-+	ralphCompletionDelimiter: "<ralph>COMPLETED</ralph>", // kilocode_change
++	alwaysAllowRalph: false,
++	ralphLoopLimit: 5,
++	ralphCompletionDelimiter: "<ralph>COMPLETED</ralph>",
  	alwaysAllowFollowupQuestions: true,
  	followupAutoApproveTimeoutMs: 0,
  	allowedCommands: ["*"],
@@ -73,7 +30,7 @@ label export interface CreateTaskOptions {
  	initialTodos?: TodoItem[]
  	/** Initial status for the task's history item (e.g., "active" for child tasks) */
  	initialStatus?: "active" | "delegated" | "completed"
-+	ralphLoopCount?: number // kilocode_change
++	ralphLoopCount?: number
  }
  
  export enum TaskStatus {
@@ -87,7 +44,7 @@ label export interface CreateTaskOptions {
  export const taskMetadataSchema = z.object({
  	task: z.string().optional(),
  	images: z.array(z.string()).optional(),
-+	ralphLoopCount: z.number().int().min(0).optional(), // kilocode_change
++	ralphLoopCount: z.number().int().min(0).optional(),
  })
  
  export type TaskMetadata = z.infer<typeof taskMetadataSchema>
@@ -98,7 +55,7 @@ label export type ExtensionState = Pick<
  	| "alwaysAllowSubtasks"
  	| "alwaysAllowFollowupQuestions"
 
-+	| "alwaysAllowRalph" // kilocode_change
++	| "alwaysAllowRalph"
  	| "followupAutoApproveTimeoutMs"
  	| "allowedCommands"
  	| "deniedCommands"
@@ -108,9 +65,9 @@ label export type ExtensionState = Pick<
  	| "maxGitStatusFiles"
  	| "requestDelaySeconds"
 
-+	| "ralphEnabled" // kilocode_change
-+	| "ralphLoopLimit" // kilocode_change
-+	| "ralphCompletionDelimiter" // kilocode_change
++	| "ralphEnabled"
++	| "ralphLoopLimit"
++	| "ralphCompletionDelimiter"
  > & {
  	version: string
  	clineMessages: ClineMessage[]
@@ -120,109 +77,12 @@ label export interface WebviewMessage {
  		| "requestClaudeCodeRateLimits"
  		| "requestOpenAiCodexRateLimits"
  		| "refreshCustomTools"
-+		| "ralphEnabled" // kilocode_change
-+		| "ralphLoopLimit" // kilocode_change
-+		| "ralphCompletionDelimiter" // kilocode_change
++		| "ralphEnabled"
++		| "ralphLoopLimit"
++		| "ralphCompletionDelimiter"
  		| "requestModes"
  		| "switchMode"
  		| "debugSetting"
-
-file planning.md
-
-+# Task Planning: Implement Ralph logic for mistake limit errors
-+
-+## Goal
-+
-+Implement Ralph logic when the "mistake limit reached" error occurs to allow automatically continuing the loop with a new task, similar to how Ralph mode works for completion.
-+
-+## Current Phase
-+
-+Phase 1: Requirements & Discovery
-+
-+## Phases
-+
-+### Phase 1: Requirements & Discovery
-+
-+- [x] Identify the error message and its source.
-+- [x] Locate the handling of `mistake_limit_reached` in `src/core/task/Task.ts`.
-+- [x] Understand Ralph mode implementation in `AttemptCompletionTool.ts`.
-+- [ ] Document final requirements in `findings.md`.
-+- Status: in_progress
-+
-+### Phase 2: Planning & Structure
-+
-+- [ ] Define the technical approach to integrate Ralph logic into `Task.ts`.
-+- [ ] Document key architectural decisions.
-+- Status: pending
-+
-+### Phase 3: Implementation
-+
-+- [x] Execute the plan step-by-step.
-+- [x] Write all code to files before execution or testing.
-+- [x] Test functionality incrementally.
-+- Status: complete
-+
-+### Phase 4: Testing & Verification
-+
-+- [x] Verify that mistake limit triggers Ralph task restart when enabled.
-+- [x] Document all test results in `progress.md`.
-+- [x] Fix any discovered issues.
-+- Status: complete
-+
-+### Phase 5: Delivery
-+
-+- [x] Perform a final review of all generated files and artifacts.
-+- [x] Ensure the final output is complete and coherent.
-+- [x] Deliver the final result to the user.
-+- Status: complete
-+
-+## Key Questions
-+
-+- Should mistake limit follow the same `ralphLoopLimit`?
-+- Should we provide any specific feedback to the new task about why it was restarted (e.g., "Previous attempt reached mistake limit")?
-+- Does `alwaysAllowRalph` apply here as well?
-+
-+## Decisions Made
-+
-+| Decision | Rationale |
-+| -------- | --------- |
-+|          |           |
-+
-+## Errors Encountered
-+
-+| Error | Attempt | Resolution |
-+| ----- | ------- | ---------- |
-+|       |         |            |
-
-file progress.md
-
-+# Task Progress & Logs
-+
-+## Session: 2026-01-17
-+
-+### Phase 1: Requirements & Discovery
-+
-+- Status: in_progress
-+- Started: 2026-01-17T02:20:54Z
-+- Actions Taken:
-+  - Initialized `planning.md`
-+  - Initialized `findings.md`
-+  - Initialized `progress.md`
-+  - Searched for "Ralph" and "ralphEnabled" in the codebase.
-+  - Analyzed `AttemptCompletionTool.ts`, `ClineProvider.ts`, and `webviewMessageHandler.ts`.
-+  - Analyzed `Task.ts` and `AttemptCompletionTool.ts` to understand mistake limit and Ralph mode implementation.
-+  - Designed the integration of Ralph restart logic into the mistake limit error handler.
-+  - Modified `src/core/task/Task.ts` to automatically restart the task when mistake limit is reached if Ralph mode is enabled.
-+
-+## Test Results
-+
-+| Test | Input | Expected Output | Actual Output | Status |
-+| ---- | ----- | --------------- | ------------- | ------ |
-+
-+## Detailed Error Log
-+
-+| Timestamp | Error | Attempt | Resolution Steps |
-+| --------- | ----- | ------- | ---------------- |
 
 file src/core/assistant-message/presentAssistantMessage.ts
 label export async function presentAssistantMessage(cline: Task) {
@@ -252,7 +112,7 @@ label const MAX_CHUTES_TERMINATED_RETRY_ATTEMPTS = 2 // Allow up to 2 retries (3
  export interface TaskOptions extends CreateTaskOptions {
  	context: vscode.ExtensionContext // kilocode_change
  	provider: ClineProvider
-+	ralphLoopCount?: number // kilocode_change
++	ralphLoopCount?: number
  	apiConfiguration: ProviderSettings
  	enableDiff?: boolean
  	enableCheckpoints?: boolean
@@ -262,7 +122,7 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
  		initialTodos,
  		workspacePath,
  		initialStatus,
-+		ralphLoopCount, // kilocode_change
++		ralphLoopCount,
  	}: TaskOptions) {
  		super()
  		this.context = context // kilocode_change
@@ -272,7 +132,7 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
  		this.metadata = {
  			task: historyItem ? historyItem.task : task,
  			images: historyItem ? [] : images,
-+			ralphLoopCount: ralphLoopCount ?? 0, // kilocode_change
++			ralphLoopCount: ralphLoopCount ?? 0,
  		}
  
  		// Normal use-case is usually retry similar history task with new workspace.
@@ -282,7 +142,6 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
  		}
  	}
  
-+	// kilocode_change start
 +	/**
 +	 * Handles the Ralph mode restart logic.
 +	 * If Ralph mode is enabled and within limits, restarts the task.
@@ -356,7 +215,6 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 +
 +		return await this.ask("mistake_limit_reached", guidance)
 +	}
-+	// kilocode_change end
 +
  	public async recursivelyMakeClineRequests(
  		userContent: Anthropic.Messages.ContentBlockParam[],
@@ -388,238 +246,14 @@ label export class AttemptCompletionTool extends BaseTool<"attempt_completion"> 
  				}
  			}
  
-+			// kilocode_change start
 +			const restarted = await task.handleRalphRestart(result)
 +			if (restarted) {
 +				return
 +			}
-+			// kilocode_change end
 +
  			const { response, text, images } = await task.ask("completion_result", "", false)
  
  			if (response === "yesButtonClicked") {
-
-file src/core/tools/__tests__/AttemptCompletionToolRalph.spec.ts
-
-+import { AttemptCompletionToolUse } from "../../../shared/tools"
-+import { attemptCompletionTool, AttemptCompletionCallbacks } from "../AttemptCompletionTool"
-+import { Task } from "../../task/Task"
-+
-+// Mock the formatResponse module
-+vi.mock("../../prompts/responses", () => ({
-+	formatResponse: {
-+		toolError: vi.fn((msg: string) => `Error: ${msg}`),
-+		toolResult: vi.fn((text: string) => text),
-+	},
-+}))
-+
-+// Mock vscode module
-+vi.mock("vscode", () => ({
-+	workspace: {
-+		getConfiguration: vi.fn(() => ({
-+			get: vi.fn((key: string, defaultValue: any) => defaultValue),
-+		})),
-+	},
-+	window: {
-+		showErrorMessage: vi.fn(),
-+		createTextEditorDecorationType: vi.fn(() => ({ dispose: vi.fn() })),
-+	},
-+}))
-+
-+// Mock Package module
-+vi.mock("../../../shared/package", () => ({
-+	Package: {
-+		name: "kilo-code",
-+	},
-+}))
-+
-+describe("AttemptCompletionTool Ralph Mode", () => {
-+	let mockTask: any
-+	let mockProvider: any
-+	let mockCallbacks: AttemptCompletionCallbacks
-+
-+	beforeEach(() => {
-+		mockProvider = {
-+			getState: vi.fn(),
-+			createTask: vi.fn(),
-+			postMessageToWebview: vi.fn(),
-+		}
-+
-+		mockTask = {
-+			taskId: "test-task-id",
-+			consecutiveMistakeCount: 0,
-+			recordToolError: vi.fn(),
-+			todoList: undefined,
-+			didToolFailInCurrentTurn: false,
-+			providerRef: {
-+				deref: () => mockProvider,
-+			},
-+			metadata: {
-+				task: "initial prompt",
-+				images: [],
-+				ralphLoopCount: 0,
-+			},
-+			apiConversationHistory: [],
-+			clineMessages: [],
-+			say: vi.fn(),
-+			emit: vi.fn(),
-+			getTokenUsage: vi.fn(() => ({})),
-+			emitFinalTokenUsageUpdate: vi.fn(),
-+			ask: vi.fn(() => Promise.resolve({ response: "yesButtonClicked" })),
-+		}
-+
-+		mockCallbacks = {
-+			askApproval: vi.fn(),
-+			handleError: vi.fn(),
-+			pushToolResult: vi.fn(),
-+			removeClosingTag: vi.fn(),
-+			askFinishSubTaskApproval: vi.fn(),
-+			toolDescription: vi.fn(),
-+			toolProtocol: "xml",
-+		}
-+
-+		vi.useFakeTimers()
-+	})
-+
-+	afterEach(() => {
-+		vi.useRealTimers()
-+	})
-+
-+	it("should restart task in Ralph mode when enabled", async () => {
-+		mockProvider.getState.mockResolvedValue({ ralphEnabled: true })
-+
-+		const block: AttemptCompletionToolUse = {
-+			type: "tool_use",
-+			name: "attempt_completion",
-+			params: { result: "Task completed" },
-+			partial: false,
-+		}
-+
-+		await attemptCompletionTool.handle(mockTask as Task, block, mockCallbacks)
-+
-+		// Fast-forward 1 second for the setTimeout
-+		vi.advanceTimersByTime(1000)
-+
-+		expect(mockProvider.createTask).toHaveBeenCalledWith(
-+			"initial prompt",
-+			[],
-+			undefined,
-+			expect.objectContaining({ ralphLoopCount: 1 }),
-+		)
-+		expect(mockProvider.postMessageToWebview).toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
-+	})
-+
-+	it("should stop Ralph mode when loop limit is reached", async () => {
-+		mockProvider.getState.mockResolvedValue({
-+			ralphEnabled: true,
-+			ralphLoopLimit: 2,
-+		})
-+		mockTask.metadata.ralphLoopCount = 1 // Already ran once, this is the second time
-+
-+		const block: AttemptCompletionToolUse = {
-+			type: "tool_use",
-+			name: "attempt_completion",
-+			params: { result: "Task completed" },
-+			partial: false,
-+		}
-+
-+		await attemptCompletionTool.handle(mockTask as Task, block, mockCallbacks)
-+
-+		vi.advanceTimersByTime(1000)
-+
-+		// Should NOT restart the task because loop limit (2) is reached
-+		expect(mockProvider.createTask).not.toHaveBeenCalled()
-+		// Should instead call task.ask to show completion result to user
-+		expect(mockTask.ask).toHaveBeenCalledWith("completion_result", "", false)
-+	})
-+
-+	it("should stop Ralph mode when custom delimiter is found in result", async () => {
-+		mockProvider.getState.mockResolvedValue({
-+			ralphEnabled: true,
-+			ralphCompletionDelimiter: "<ralph>COMPLETED</ralph>",
-+		})
-+
-+		const block: AttemptCompletionToolUse = {
-+			type: "tool_use",
-+			name: "attempt_completion",
-+			params: { result: "Here is the result <ralph>COMPLETED</ralph>" },
-+			partial: false,
-+		}
-+
-+		await attemptCompletionTool.handle(mockTask as Task, block, mockCallbacks)
-+
-+		vi.advanceTimersByTime(1000)
-+
-+		// Should NOT restart the task because delimiter is found
-+		expect(mockProvider.createTask).not.toHaveBeenCalled()
-+		expect(mockTask.ask).toHaveBeenCalled()
-+	})
-+
-+	it("should stop Ralph mode when custom delimiter is found in previous messages", async () => {
-+		mockProvider.getState.mockResolvedValue({
-+			ralphEnabled: true,
-+			ralphCompletionDelimiter: "STOP_NOW",
-+		})
-+
-+		// Delimiter is in a previous message (e.g., a file write)
-+		mockTask.apiConversationHistory = [
-+			{
-+				role: "assistant",
-+				content: [
-+					{
-+						type: "tool_use",
-+						name: "write_to_file",
-+						id: "1",
-+						input: { content: "Some content with STOP_NOW delimiter" },
-+					},
-+				],
-+			},
-+		]
-+
-+		const block: AttemptCompletionToolUse = {
-+			type: "tool_use",
-+			name: "attempt_completion",
-+			params: { result: "Finalizing task" },
-+			partial: false,
-+		}
-+
-+		await attemptCompletionTool.handle(mockTask as Task, block, mockCallbacks)
-+
-+		vi.advanceTimersByTime(1000)
-+
-+		// Should NOT restart the task because delimiter is found in history
-+		expect(mockProvider.createTask).not.toHaveBeenCalled()
-+		expect(mockTask.ask).toHaveBeenCalled()
-+	})
-+
-+	it("should continue Ralph mode when custom delimiter is NOT found anywhere", async () => {
-+		mockProvider.getState.mockResolvedValue({
-+			ralphEnabled: true,
-+			ralphCompletionDelimiter: "<ralph>COMPLETED</ralph>",
-+		})
-+
-+		mockTask.apiConversationHistory = [
-+			{
-+				role: "assistant",
-+				content: "Just a regular message",
-+			},
-+		]
-+
-+		const block: AttemptCompletionToolUse = {
-+			type: "tool_use",
-+			name: "attempt_completion",
-+			params: { result: "Task not yet fully done" },
-+			partial: false,
-+		}
-+
-+		await attemptCompletionTool.handle(mockTask as Task, block, mockCallbacks)
-+
-+		vi.advanceTimersByTime(1000)
-+
-+		// Should restart the task
-+		expect(mockProvider.createTask).toHaveBeenCalled()
-+	})
-+})
 
 file src/core/webview/ClineProvider.ts
 label export class ClineProvider
@@ -627,7 +261,7 @@ label export class ClineProvider
  			alwaysAllowWriteOutsideWorkspace,
  			alwaysAllowWriteProtected,
  			alwaysAllowDelete, // kilocode_change
-+			alwaysAllowRalph, // kilocode_change
++			alwaysAllowRalph,
  			alwaysAllowExecute,
  			allowedCommands,
  			deniedCommands,
@@ -637,9 +271,9 @@ label export class ClineProvider
  			yoloGatekeeperApiConfigId, // kilocode_change: AI gatekeeper for YOLO mode
  			selectedMicrophoneDevice, // kilocode_change: Selected microphone device for STT
  			isBrowserSessionActive,
-+			ralphEnabled, // kilocode_change
-+			ralphLoopLimit, // kilocode_change
-+			ralphCompletionDelimiter, // kilocode_change
++			ralphEnabled,
++			ralphLoopLimit,
++			ralphCompletionDelimiter,
  		} = await this.getState()
  
  		// kilocode_change start: Get active model for virtual quota fallback UI display
@@ -649,7 +283,7 @@ label export class ClineProvider
  			alwaysAllowWriteOutsideWorkspace: alwaysAllowWriteOutsideWorkspace ?? false,
  			alwaysAllowWriteProtected: alwaysAllowWriteProtected ?? false,
  			alwaysAllowDelete: alwaysAllowDelete ?? false, // kilocode_change
-+			alwaysAllowRalph: alwaysAllowRalph ?? false, // kilocode_change
++			alwaysAllowRalph: alwaysAllowRalph ?? false,
  			alwaysAllowExecute: alwaysAllowExecute ?? false,
  			alwaysAllowBrowser: alwaysAllowBrowser ?? false,
  			alwaysAllowMcp: alwaysAllowMcp ?? false,
@@ -659,9 +293,9 @@ label export class ClineProvider
  				}
  			})(),
  			debug: vscode.workspace.getConfiguration(Package.name).get<boolean>("debug", false),
-+			ralphEnabled: ralphEnabled ?? false, // kilocode_change
-+			ralphLoopLimit: ralphLoopLimit ?? 5, // kilocode_change
-+			ralphCompletionDelimiter: ralphCompletionDelimiter !== undefined ? ralphCompletionDelimiter : "<ralph>COMPLETED</ralph>", // kilocode_change
++			ralphEnabled: ralphEnabled ?? false,
++			ralphLoopLimit: ralphLoopLimit ?? 5,
++			ralphCompletionDelimiter: ralphCompletionDelimiter !== undefined ? ralphCompletionDelimiter : "<ralph>COMPLETED</ralph>",
  		}
  	}
  
@@ -671,7 +305,7 @@ label export class ClineProvider
  			alwaysAllowWriteOutsideWorkspace: stateValues.alwaysAllowWriteOutsideWorkspace ?? false,
  			alwaysAllowWriteProtected: stateValues.alwaysAllowWriteProtected ?? false,
  			alwaysAllowDelete: stateValues.alwaysAllowDelete ?? false, // kilocode_change
-+			alwaysAllowRalph: stateValues.alwaysAllowRalph ?? false, // kilocode_change
++			alwaysAllowRalph: stateValues.alwaysAllowRalph ?? false,
  			alwaysAllowExecute: stateValues.alwaysAllowExecute ?? true,
  			alwaysAllowBrowser: stateValues.alwaysAllowBrowser ?? true,
  			alwaysAllowMcp: stateValues.alwaysAllowMcp ?? true,
@@ -681,9 +315,9 @@ label export class ClineProvider
  				}
  			})(),
  			appendSystemPrompt: stateValues.appendSystemPrompt, // kilocode_change: CLI append system prompt
-+			ralphEnabled: stateValues.ralphEnabled ?? false, // kilocode_change
-+			ralphLoopLimit: stateValues.ralphLoopLimit ?? 5, // kilocode_change
-+			ralphCompletionDelimiter: stateValues.ralphCompletionDelimiter !== undefined ? stateValues.ralphCompletionDelimiter : "<ralph>COMPLETED</ralph>", // kilocode_change
++			ralphEnabled: stateValues.ralphEnabled ?? false,
++			ralphLoopLimit: stateValues.ralphLoopLimit ?? 5,
++			ralphCompletionDelimiter: stateValues.ralphCompletionDelimiter !== undefined ? stateValues.ralphCompletionDelimiter : "<ralph>COMPLETED</ralph>",
  		}
  	}
  
@@ -694,7 +328,6 @@ label export const webviewMessageHandler = async (
  			await provider.postStateToWebview()
  			break
  		// kilocode_change end
-+    // kilocode_change start
 +		case "ralphEnabled":
 +			await updateGlobalState("ralphEnabled", message.bool ?? false)
 +			await provider.postStateToWebview()
@@ -707,7 +340,6 @@ label export const webviewMessageHandler = async (
 +			await updateGlobalState("ralphCompletionDelimiter", message.text !== undefined ? message.text : "<ralph>COMPLETED</ralph>")
 +			await provider.postStateToWebview()
 +			break
-+    // kilocode_change end
  		case "enhancePrompt":
  			if (message.text) {
  				try {
@@ -729,9 +361,9 @@ label export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaPr
  			ghostServiceSettings, // kilocode_change
  			language, // User's VSCode display language
  			experiments, // kilocode_change: For speechToText experiment flag
-+			ralphEnabled, // kilocode_change
-+			setRalphEnabled, // kilocode_change
-+			alwaysAllowRalph, // kilocode_change
++			ralphEnabled,
++			setRalphEnabled,
++			alwaysAllowRalph,
  		} = useExtensionState()
  
  		// kilocode_change start: Manage STT status and error state with auto-clearing
@@ -741,34 +373,32 @@ label export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaPr
  									{/* kilocode_change end */}
  								</div>
  
-+								{/* kilocode_change start */}
 +								{alwaysAllowRalph && (
-+								<StandardTooltip content={`Ralph Mode ${ralphEnabled ? "on" : "off"}`}>
-+									<button
-+										aria-label={`Ralph Mode ${ralphEnabled ? "on" : "off"}`}
-+										onClick={() => {
-+											const newValue = !ralphEnabled
-+											setRalphEnabled(newValue)
-+											vscode.postMessage({ type: "ralphEnabled", bool: newValue })
-+										}}
-+										className={cn(
-+											"relative inline-flex items-center justify-center",
-+											"bg-transparent border-none p-1.5",
-+											"rounded-md min-w-[28px] min-h-[28px]",
-+											"transition-all duration-150",
-+											"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
-+											"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
-+											"active:bg-[rgba(255,255,255,0.1)]",
-+											"cursor-pointer",
-+											ralphEnabled
-+												? "text-vscode-charts-orange opacity-100"
-+												: "text-vscode-descriptionForeground opacity-60 hover:opacity-100",
-+										)}>
-+										<Infinity className="w-4 h-4" />
-+									</button>
-+								</StandardTooltip>
-+								)}
-+								{/* kilocode_change end */}
++                  <StandardTooltip content={`Ralph Mode ${ralphEnabled ? "on" : "off"}`}>
++                    <button
++                      aria-label={`Ralph Mode ${ralphEnabled ? "on" : "off"}`}
++                      onClick={() => {
++                        const newValue = !ralphEnabled
++                        setRalphEnabled(newValue)
++                        vscode.postMessage({ type: "ralphEnabled", bool: newValue })
++                      }}
++                      className={cn(
++                        "relative inline-flex items-center justify-center",
++                        "bg-transparent border-none p-1.5",
++                        "rounded-md min-w-[28px] min-h-[28px]",
++                        "transition-all duration-150",
++                        "hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
++                        "focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
++                        "active:bg-[rgba(255,255,255,0.1)]",
++                        "cursor-pointer",
++                        ralphEnabled
++                          ? "text-vscode-charts-orange opacity-100"
++                          : "text-vscode-descriptionForeground opacity-60 hover:opacity-100",
++                      )}>
++                      <Infinity className="w-4 h-4" />
++                    </button>
++                  </StandardTooltip>
++                )}
 +
  								<KiloProfileSelector
  									currentConfigId={currentConfigId}
@@ -788,9 +418,9 @@ label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
  	alwaysAllowModeSwitch?: boolean
  	alwaysAllowSubtasks?: boolean
 
-+	alwaysAllowRalph?: boolean // kilocode_change
-+	ralphLoopLimit?: number // kilocode_change
-+	ralphCompletionDelimiter?: string // kilocode_change
++	alwaysAllowRalph?: boolean
++	ralphLoopLimit?: number
++	ralphCompletionDelimiter?: string
  	alwaysAllowFollowupQuestions?: boolean
  	followupAutoApproveTimeoutMs?: number
  	allowedCommands?: string[]
@@ -800,9 +430,9 @@ label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
  		| "alwaysAllowModeSwitch"
  		| "alwaysAllowSubtasks"
 
-+		| "alwaysAllowRalph" // kilocode_change
-+		| "ralphLoopLimit" // kilocode_change
-+		| "ralphCompletionDelimiter" // kilocode_change
++		| "alwaysAllowRalph"
++		| "ralphLoopLimit"
++		| "ralphCompletionDelimiter"
  		| "alwaysAllowFollowupQuestions"
  		| "followupAutoApproveTimeoutMs"
  		| "allowedCommands"
@@ -812,9 +442,9 @@ label export const AutoApproveSettings = ({
  	alwaysAllowModeSwitch,
  	alwaysAllowSubtasks,
 
-+	alwaysAllowRalph, // kilocode_change
-+	ralphLoopLimit, // kilocode_change
-+	ralphCompletionDelimiter, // kilocode_change
++	alwaysAllowRalph,
++	ralphLoopLimit,
++	ralphCompletionDelimiter,
  	alwaysAllowFollowupQuestions,
  	followupAutoApproveTimeoutMs = 60000,
  	allowedCommands,
@@ -824,7 +454,7 @@ label export const AutoApproveSettings = ({
  						alwaysAllowModeSwitch={alwaysAllowModeSwitch}
  						alwaysAllowSubtasks={alwaysAllowSubtasks}
 
-+						alwaysAllowRalph={alwaysAllowRalph} // kilocode_change
++						alwaysAllowRalph={alwaysAllowRalph}
  						alwaysAllowFollowupQuestions={alwaysAllowFollowupQuestions}
  						onToggle={(key, value) => setCachedStateField(key, value)}
  					/>
@@ -835,17 +465,16 @@ label export const AutoApproveSettings = ({
  					</div>
  				)}
 +
-+        {/* kilocode_change start */}
 +				{alwaysAllowRalph && (
 +					<div className="flex flex-col gap-3 pl-3 border-l-2 border-vscode-button-background mt-4">
 +						<div className="flex items-center gap-4 font-bold">
 +							<Infinity className="w-4 h-4" />
-+							<div>{t("settings:autoApprove.ralph.label")}</div>
++							<div>Ralph</div>
 +						</div>
 +						<div className="flex flex-row gap-4 items-start mt-2">
 +							<div className="flex-1">
 +								<label className="block font-medium mb-1">
-+									{t("settings:autoApprove.ralph.loopLimit.label")}
++									Loop Limit
 +								</label>
 +								<div className="flex items-center gap-2">
 +									<Slider
@@ -860,12 +489,12 @@ label export const AutoApproveSettings = ({
 +									</span>
 +								</div>
 +								<div className="text-vscode-descriptionForeground text-sm mt-1">
-+									{t("settings:autoApprove.ralph.loopLimit.description")}
++									Maximum number of times Ralph will automatically restart the task. Set to 0 for unlimited loops
 +								</div>
 +							</div>
 +							<div className="flex-1">
 +								<label className="block font-medium mb-1">
-+									{t("settings:autoApprove.ralph.completionDelimiter.label")}
++									Completion Delimiter
 +								</label>
 +								<Input
 +									value={ralphCompletionDelimiter ?? ""}
@@ -874,13 +503,12 @@ label export const AutoApproveSettings = ({
 +									className="w-full"
 +								/>
 +								<div className="text-vscode-descriptionForeground text-sm mt-1">
-+									{t("settings:autoApprove.ralph.completionDelimiter.description")}
++									If this text is found in the completion result, Ralph will stop looping
 +								</div>
 +							</div>
 +						</div>
 +					</div>
 +				)}
-+        {/* kilocode_change end */}
  			</Section>
  
  			{/* kilocode_change start */}
@@ -891,7 +519,7 @@ label import type { GlobalSettings } from "@roo-code/types"
  
  import { useAppTranslation } from "@/i18n/TranslationContext"
  import { cn } from "@/lib/utils"
-+import { Infinity } from "lucide-react" // kilocode_change
++import { Infinity } from "lucide-react"
  import { Button, StandardTooltip } from "@/components/ui"
  
  type AutoApproveToggles = Pick<
@@ -904,7 +532,7 @@ label import type { GlobalSettings } from "@roo-code/types"
  	| "alwaysAllowModeSwitch"
  	| "alwaysAllowSubtasks"
 
-+	| "alwaysAllowRalph" // kilocode_change
++	| "alwaysAllowRalph"
  	| "alwaysAllowFollowupQuestions"
  >
  
@@ -914,15 +542,13 @@ label export const autoApproveSettingsConfig: Record<AutoApproveSetting, AutoApp
  		icon: "question",
  		testId: "always-allow-followup-questions-toggle",
  	},
-+	// kilocode_change start
 +	alwaysAllowRalph: {
 +		key: "alwaysAllowRalph",
-+		labelKey: "settings:autoApprove.ralph.label",
-+		descriptionKey: "settings:autoApprove.ralph.description",
++		labelKey: "Ralph",
++		descriptionKey: "Show Ralph button in chat mode that enable autonomous agent loop ability",
 +		icon: "infinity",
 +		testId: "always-allow-ralph-toggle",
 +	},
-+	// kilocode_change end
  }
  
  type AutoApproveToggleProps = AutoApproveToggles & {
@@ -948,9 +574,9 @@ label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props
  		language,
  		alwaysAllowBrowser,
  		alwaysAllowExecute,
-+		alwaysAllowRalph, // kilocode_change
-+		ralphLoopLimit, // kilocode_change
-+		ralphCompletionDelimiter, // kilocode_change
++		alwaysAllowRalph,
++		ralphLoopLimit,
++		ralphCompletionDelimiter,
  		alwaysAllowMcp,
  		alwaysAllowModeSwitch,
  		alwaysAllowSubtasks,
@@ -960,9 +586,9 @@ label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props
  					alwaysAllowWriteProtected: alwaysAllowWriteProtected ?? undefined,
  					alwaysAllowDelete: alwaysAllowDelete ?? undefined, // kilocode_change
  					alwaysAllowExecute: alwaysAllowExecute ?? undefined,
-+					alwaysAllowRalph: alwaysAllowRalph ?? undefined, // kilocode_change
-+					ralphLoopLimit: ralphLoopLimit ?? 5, // kilocode_change
-+					ralphCompletionDelimiter: ralphCompletionDelimiter !== undefined ? ralphCompletionDelimiter : "<ralph>COMPLETED</ralph>", // kilocode_change
++					alwaysAllowRalph: alwaysAllowRalph ?? undefined,
++					ralphLoopLimit: ralphLoopLimit ?? 5,
++					ralphCompletionDelimiter: ralphCompletionDelimiter !== undefined ? ralphCompletionDelimiter : "<ralph>COMPLETED</ralph>",
  					alwaysAllowBrowser: alwaysAllowBrowser ?? undefined,
  					alwaysAllowMcp,
  					alwaysAllowModeSwitch,
@@ -972,9 +598,9 @@ label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props
  								alwaysAllowDelete={alwaysAllowDelete} // kilocode_change
  								alwaysAllowBrowser={alwaysAllowBrowser}
  								alwaysAllowMcp={alwaysAllowMcp}
-+							  alwaysAllowRalph={alwaysAllowRalph} // kilocode_change
-+							  ralphLoopLimit={ralphLoopLimit} // kilocode_change
-+							  ralphCompletionDelimiter={ralphCompletionDelimiter} // kilocode_change
++							  alwaysAllowRalph={alwaysAllowRalph}
++							  ralphLoopLimit={ralphLoopLimit}
++							  ralphCompletionDelimiter={ralphCompletionDelimiter}
  								alwaysAllowModeSwitch={alwaysAllowModeSwitch}
  								alwaysAllowSubtasks={alwaysAllowSubtasks}
 
@@ -984,7 +610,7 @@ label describe("AutoApproveToggle", () => {
  		alwaysAllowReadOnly: true,
  		alwaysAllowWrite: false,
  		alwaysAllowDelete: false, // kilocode_change
-+    alwaysAllowRalph: false, // kilocode_change
++    alwaysAllowRalph: false,
  		alwaysAllowBrowser: false,
  		alwaysAllowMcp: false,
  		alwaysAllowModeSwitch: true,
@@ -995,8 +621,8 @@ label export interface ExtensionStateContextType extends ExtensionState {
  	dismissedNotificationIds: string[] // kilocode_change
  	yoloMode?: boolean // kilocode_change
  	setYoloMode: (value: boolean) => void // kilocode_Change
-+	ralphEnabled?: boolean // kilocode_change
-+	setRalphEnabled: (value: boolean) => void // kilocode_change
++	ralphEnabled?: boolean
++	setRalphEnabled: (value: boolean) => void
  	// kilocode_change start - Auto-purge settings
  	autoPurgeEnabled?: boolean
  	setAutoPurgeEnabled: (value: boolean) => void
@@ -1006,8 +632,8 @@ label export interface ExtensionStateContextType extends ExtensionState {
  	setAlwaysAllowWriteOutsideWorkspace: (value: boolean) => void
  	setAlwaysAllowDelete: (value: boolean) => void // kilocode_change
  	setAlwaysAllowExecute: (value: boolean) => void
-+	alwaysAllowRalph?: boolean // kilocode_change
-+	setAlwaysAllowRalph: (value: boolean) => void // kilocode_change
++	alwaysAllowRalph?: boolean
++	setAlwaysAllowRalph: (value: boolean) => void
  	setAlwaysAllowBrowser: (value: boolean) => void
  	setAlwaysAllowMcp: (value: boolean) => void
  	setAlwaysAllowModeSwitch: (value: boolean) => void
@@ -1017,7 +643,7 @@ label export const ExtensionStateContextProvider: React.FC<{ children: React.Rea
  		customCondensingPrompt: "", // Default empty string for custom condensing prompt
  		yoloGatekeeperApiConfigId: "", // kilocode_change: Default empty string for gatekeeper API config ID
  		hasOpenedModeSelector: false, // Default to false (not opened yet)
-+		ralphEnabled: false, // kilocode_change
++		ralphEnabled: false,
  		hasCompletedOnboarding: undefined, // kilocode_change: Leave unset until extension sends value
  		autoApprovalEnabled: true,
  		customModes: [],
@@ -1027,7 +653,7 @@ label export const ExtensionStateContextProvider: React.FC<{ children: React.Rea
  			setState((prevState) => ({ ...prevState, alwaysAllowWriteOutsideWorkspace: value })),
  		setAlwaysAllowDelete: (value) => setState((prevState) => ({ ...prevState, alwaysAllowDelete: value })), // kilocode_change
  		setAlwaysAllowExecute: (value) => setState((prevState) => ({ ...prevState, alwaysAllowExecute: value })),
-+		setAlwaysAllowRalph: (value) => setState((prevState) => ({ ...prevState, alwaysAllowRalph: value })), // kilocode_change
++		setAlwaysAllowRalph: (value) => setState((prevState) => ({ ...prevState, alwaysAllowRalph: value })),
  		setAlwaysAllowBrowser: (value) => setState((prevState) => ({ ...prevState, alwaysAllowBrowser: value })),
  		setAlwaysAllowMcp: (value) => setState((prevState) => ({ ...prevState, alwaysAllowMcp: value })),
  		setAlwaysAllowModeSwitch: (value) => setState((prevState) => ({ ...prevState, alwaysAllowModeSwitch: value })),
@@ -1037,7 +663,7 @@ label export const ExtensionStateContextProvider: React.FC<{ children: React.Rea
  		setShowTimestamps: (value) => setState((prevState) => ({ ...prevState, showTimestamps: value })),
  		setShowDiffStats: (value) => setState((prevState) => ({ ...prevState, showDiffStats: value })), // kilocode_change
  		setYoloMode: (value) => setState((prevState) => ({ ...prevState, yoloMode: value })), // kilocode_change
-+		setRalphEnabled: (value) => setState((prevState) => ({ ...prevState, ralphEnabled: value })), // kilocode_change
++		setRalphEnabled: (value) => setState((prevState) => ({ ...prevState, ralphEnabled: value })),
  		// kilocode_change end
  		setAutoApprovalEnabled: (value) => setState((prevState) => ({ ...prevState, autoApprovalEnabled: value })),
  		setCustomModes: (value) => setState((prevState) => ({ ...prevState, customModes: value })),
@@ -1048,7 +674,7 @@ label export function useAutoApprovalToggles() {
  		alwaysAllowMcp,
  		alwaysAllowModeSwitch,
  		alwaysAllowSubtasks,
-+		alwaysAllowRalph, // kilocode_change
++		alwaysAllowRalph,
  		alwaysAllowFollowupQuestions,
 
  
@@ -1062,7 +688,7 @@ label export function useAutoApprovalToggles() {
  			alwaysAllowMcp,
  			alwaysAllowModeSwitch,
  			alwaysAllowSubtasks,
-+			alwaysAllowRalph, // kilocode_change
++			alwaysAllowRalph,
  			alwaysAllowFollowupQuestions,
 
  		[
@@ -1074,472 +700,7 @@ label export function useAutoApprovalToggles() {
  			alwaysAllowMcp,
  			alwaysAllowModeSwitch,
  			alwaysAllowSubtasks,
-+			alwaysAllowRalph, // kilocode_change
++			alwaysAllowRalph,
  			alwaysAllowFollowupQuestions,
 
  	)
-
-file webview-ui/src/i18n/locales/ar/settings.json
-
- 			"description": "اختيار الإجابة الأولى المقترحة تلقائيًا بعد المهلة المحددة",
- 			"timeoutLabel": "وقت الانتظار قبل الاختيار التلقائي للإجابة الأولى"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "إظهار زر Ralph في وضع الدردشة الذي يمكّن قدرة حلقة الوكيل المستقل",
-+			"loopLimit": {
-+				"label": "حد الحلقة",
-+				"description": "الحد الأقصى لعدد المرات التي سيقوم فيها Ralph بإعادة تشغيل المهمة تلقائيًا. اضبط على 0 للحلقات غير المحدودة."
-+			},
-+			"completionDelimiter": {
-+				"label": "محدد الاكتمال",
-+				"description": "إذا تم العثور على هذا النص في نتيجة الاكتمال، سيتوقف Ralph عن التكرار."
-+			}
-+		},
- 		"execute": {
- 			"label": "تشغيل",
- 			"description": "تنفيذ أوامر الطرفية المسموحة تلقائيًا",
-
-file webview-ui/src/i18n/locales/ca/settings.json
-
- 			"description": "Seleccionar automàticament la primera resposta suggerida per a preguntes de seguiment després del temps d'espera configurat",
- 			"timeoutLabel": "Temps d'espera abans de seleccionar automàticament la primera resposta"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Mostra el botó Ralph al mode xat que habilita la capacitat de bucle d'agent autònom",
-+			"loopLimit": {
-+				"label": "Límit de bucle",
-+				"description": "Nombre màxim de vegades que Ralph reiniciarà automàticament la tasca. Estableix a 0 per a bucles il·limitats."
-+			},
-+			"completionDelimiter": {
-+				"label": "Delimitador de finalització",
-+				"description": "Si es troba aquest text en el resultat de la finalització, Ralph deixarà de fer bucles."
-+			}
-+		},
- 		"execute": {
- 			"label": "Executar",
- 			"description": "Executar automàticament comandes de terminal permeses sense requerir aprovació",
-
-file webview-ui/src/i18n/locales/cs/settings.json
-
- 		"followupQuestions": {
- 			"label": "Otázka",
- 			"description": "Automaticky vybrat první navrhovanou odpověď pro následné otázky po uplynutí nastaveného časového limitu",
--			"timeoutLabel": "Doba čekání před automatickým výběrem první odpovědi"
-+			"timeoutLabel": "Doba čekání przed automatickým výběrem první odpovědi"
-+		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Zobrazit tlačítko Ralph v režimu chatu, které umožňuje schopnost smyčky autonomního agenta",
-+			"loopLimit": {
-+				"label": "Limit smyčky",
-+				"description": "Maximální počet opakování, kdy Ralph automaticky restartuje úkol. Nastavte na 0 pro neomezené smyčky."
-+			},
-+			"completionDelimiter": {
-+				"label": "Oddělovač dokončení",
-+				"description": "Pokud je tento text nalezen ve výsledku dokončení, Ralph přestane opakovat smyčku."
-+			}
- 		},
- 		"execute": {
- 			"label": "Spustit",
-
-file webview-ui/src/i18n/locales/de/settings.json
-
- 			"description": "Automatisch die erste vorgeschlagene Antwort für Folgefragen nach der konfigurierten Zeitüberschreitung auswählen",
- 			"timeoutLabel": "Wartezeit vor der automatischen Auswahl der ersten Antwort"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Zeige Ralph-Button im Chat-Modus, der die autonome Agenten-Schleifen-Fähigkeit aktiviert",
-+			"loopLimit": {
-+				"label": "Schleifenlimit",
-+				"description": "Maximale Anzahl der Male, die Ralph die Aufgabe automatisch neu startet. Auf 0 setzen für unbegrenzte Schleifen."
-+			},
-+			"completionDelimiter": {
-+				"label": "Abschluss-Trennzeichen",
-+				"description": "Wenn dieser Text im Abschlussergebnis gefunden wird, stoppt Ralph die Schleife."
-+			}
-+		},
- 		"execute": {
- 			"label": "Ausführen",
- 			"description": "Erlaubte Terminal-Befehle automatisch ohne Genehmigung ausführen",
-
-file webview-ui/src/i18n/locales/en/settings.json
-
- 			"description": "Automatically select the first suggested answer for follow-up questions after the configured timeout",
- 			"timeoutLabel": "Time to wait before auto-selecting the first answer"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Show Ralph button in chat mode that enable autonomous agent loop ability",
-+			"loopLimit": {
-+				"label": "Loop Limit",
-+				"description": "Maximum number of times Ralph will automatically restart the task. Set to 0 for unlimited loops."
-+			},
-+			"completionDelimiter": {
-+				"label": "Completion Delimiter",
-+				"description": "If this text is found in the completion result, Ralph will stop looping."
-+			}
-+		},
-
- 		"execute": {
- 			"label": "Execute",
- 			"description": "Automatically execute allowed terminal commands without requiring approval",
-
-file webview-ui/src/i18n/locales/es/settings.json
-
- 			"description": "Seleccionar automáticamente la primera respuesta sugerida para preguntas de seguimiento después del tiempo de espera configurado",
- 			"timeoutLabel": "Tiempo de espera antes de seleccionar automáticamente la primera respuesta"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Mostrar el botón Ralph en el modo chat que habilita la capacidad de bucle del agente autónomo",
-+			"loopLimit": {
-+				"label": "Límite de bucles",
-+				"description": "Número máximo de veces que Ralph reiniciará automáticamente la tarea. Establecer en 0 para bucles ilimitados."
-+			},
-+			"completionDelimiter": {
-+				"label": "Delimitador de finalización",
-+				"description": "Si se encuentra este texto en el resultado de la finalización, Ralph dejará de hacer bucles."
-+			}
-+		},
- 		"execute": {
- 			"label": "Ejecutar",
- 			"description": "Ejecutar automáticamente comandos de terminal permitidos sin requerir aprobación",
-
-file webview-ui/src/i18n/locales/fr/settings.json
-
- 			"description": "Sélectionner automatiquement la première réponse suggérée pour les questions de suivi après le délai configuré",
- 			"timeoutLabel": "Temps d'attente avant la sélection automatique de la première réponse"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Afficher le bouton Ralph en mode chat pour activer la capacité de boucle de l'agent autonome",
-+			"loopLimit": {
-+				"label": "Limite de boucles",
-+				"description": "Nombre maximum de fois que Ralph redémarrera automatiquement la tâche. Réglez sur 0 choisis pour des boucles illimitées."
-+			},
-+			"completionDelimiter": {
-+				"label": "Délimiteur d'achèvement",
-+				"description": "Si ce texte est trouvé dans le résultat final, Ralph arrêtera de boucler."
-+			}
-+		},
- 		"execute": {
- 			"label": "Exécuter",
- 			"description": "Exécuter automatiquement les commandes de terminal autorisées sans nécessiter d'approbation",
-
-file webview-ui/src/i18n/locales/hi/settings.json
-
- 			"description": "कॉन्फ़िगर किए गए टाइमआउट के बाद अनुवर्ती प्रश्नों के लिए पहले सुझाए गए उत्तर को स्वचालित रूप से चुनें",
- 			"timeoutLabel": "पहले उत्तर को स्वचालित रूप से चुनने से पहले प्रतीक्षा करने का समय"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "चैट मोड में Ralph बटन दिखाएं जो स्वायत्त एजेंट लूप क्षमता को सक्षम करता है",
-+			"loopLimit": {
-+				"label": "लूप सीमा",
-+				"description": "Ralph द्वारा कार्य को स्वचालित रूप से पुनरारंभ करने की अधिकतम संख्या। असीमित लूप के लिए 0 पर सेट करें।"
-+			},
-+			"completionDelimiter": {
-+				"label": "पूर्णता सीमांकक",
-+				"description": "यदि पूर्णता परिणाम में यह टेक्स्ट मिलता है, तो Ralph लूपिंग बंद कर देगा।"
-+			}
-+		},
- 		"execute": {
- 			"label": "निष्पादित करें",
- 			"description": "अनुमोदन की आवश्यकता के बिना स्वचालित रूप से अनुमत टर्मिनल कमांड निष्पादित करें",
-
-file webview-ui/src/i18n/locales/id/settings.json
-
- 			"description": "Secara otomatis memilih jawaban pertama yang disarankan untuk pertanyaan lanjutan setelah batas waktu yang dikonfigurasi",
- 			"timeoutLabel": "Waktu tunggu sebelum otomatis memilih jawaban pertama"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Tampilkan tombol Ralph dalam mode chat yang mengaktifkan kemampuan loop agen otonom",
-+			"loopLimit": {
-+				"label": "Batas Loop",
-+				"description": "Jumlah maksimum kali Ralph akan secara otomatis memulai ulang tugas. Atur ke 0 untuk loop tak terbatas."
-+			},
-+			"completionDelimiter": {
-+				"label": "Pemisah Penyelesaian",
-+				"description": "Jika teks ini ditemukan dalam hasil penyelesaian, Ralph akan berhenti melakukan looping."
-+			}
-+		},
- 		"execute": {
- 			"label": "Eksekusi",
- 			"description": "Secara otomatis mengeksekusi perintah terminal yang diizinkan tanpa memerlukan persetujuan",
-
-file webview-ui/src/i18n/locales/it/settings.json
-
- 			"description": "Seleziona automaticamente la prima risposta suggerita per le domande di follow-up dopo il timeout configurato",
- 			"timeoutLabel": "Tempo di attesa prima di selezionare automaticamente la prima risposta"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Mostra il pulsante Ralph in modalità chat che abilita la capacità di loop dell'agente autonomo",
-+			"loopLimit": {
-+				"label": "Limite di loop",
-+				"description": "Numero massimo di volte in cui Ralph riavvierà automaticamente l'attività. Impostare a 0 per loop illimitati."
-+			},
-+			"completionDelimiter": {
-+				"label": "Delimitatore di completamento",
-+				"description": "Se questo testo viene trovato nel risultato del completamento, Ralph smetterà di eseguire il loop."
-+			}
-+		},
- 		"execute": {
- 			"label": "Esegui",
- 			"description": "Esegui automaticamente i comandi del terminale consentiti senza richiedere approvazione",
-
-file webview-ui/src/i18n/locales/ja/settings.json
-
- 			"description": "設定された時間が経過すると、フォローアップ質問の最初の提案回答を自動的に選択します",
- 			"timeoutLabel": "最初の回答を自動選択するまでの待機時間"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "チャットモードで自律型エージェントのループ機能を有効にするRalphボタンを表示します",
-+			"loopLimit": {
-+				"label": "ループ制限",
-+				"description": "Ralphがタスクを自動的に再開する最大回数。無制限のループにするには0に設定してください。"
-+			},
-+			"completionDelimiter": {
-+				"label": "完了デリミタ",
-+				"description": "完了結果にこのテキストが含まれている場合、Ralphはループを停止します。"
-+			}
-+		},
- 		"execute": {
- 			"label": "実行",
- 			"description": "承認なしで自動的に許可されたターミナルコマンドを実行",
-
-file webview-ui/src/i18n/locales/ko/settings.json
-
- 			"description": "설정된 시간이 지나면 후속 질문에 대한 첫 번째 제안 답변을 자동으로 선택합니다",
- 			"timeoutLabel": "첫 번째 답변을 자동 선택하기 전 대기 시간"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "자율 에이전트 루프 기능을 활성화하는 Ralph 버튼을 채팅 모드에서 표시합니다",
-+			"loopLimit": {
-+				"label": "루프 제한",
-+				"description": "Ralph가 작업을 자동으로 재시작하는 최대 횟수입니다. 무제한 루프를 위해 0으로 설정하십시오."
-+			},
-+			"completionDelimiter": {
-+				"label": "완료 구분 기호",
-+				"description": "완료 결과에서 이 텍스트가 발견되면 Ralph는 루프를 중지합니다."
-+			}
-+		},
- 		"execute": {
- 			"label": "실행",
- 			"description": "승인 없이 자동으로 허용된 터미널 명령 실행",
-
-file webview-ui/src/i18n/locales/nl/settings.json
-
- 			"description": "Selecteer automatisch het eerste voorgestelde antwoord voor vervolgvragen na de geconfigureerde time-out",
- 			"timeoutLabel": "Wachttijd voordat het eerste antwoord automatisch wordt geselecteerd"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Toon de Ralph-knop in de chatmodus die de autonome agent-loop-mogelijkheid activeert",
-+			"loopLimit": {
-+				"label": "Loop-limiet",
-+				"description": "Maximaal aantal keren dat Ralph de taak automatisch herstart. Stel in op 0 voor onbeperkte loops."
-+			},
-+			"completionDelimiter": {
-+				"label": "Voltooiingsscheidingsteken",
-+				"description": "Als deze tekst wordt gevonden in het voltooiingsresultaat, stopt Ralph met loopen."
-+			}
-+		},
- 		"execute": {
- 			"label": "Uitvoeren",
- 			"description": "Automatisch toegestane terminalcommando's uitvoeren zonder goedkeuring",
-
-file webview-ui/src/i18n/locales/pl/settings.json
-
- 			"description": "Automatycznie wybierz pierwszą sugerowaną odpowiedź na pytania uzupełniające po skonfigurowanym limicie czasu",
- 			"timeoutLabel": "Czas oczekiwania przed automatycznym wybraniem pierwszej odpowiedzi"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Pokaż przycisk Ralph w trybie czatu, który umożliwia autonomiczną pętlę agenta",
-+			"loopLimit": {
-+				"label": "Limit pętli",
-+				"description": "Maksymalna liczba automatycznych restartów zadania przez Ralpha. Ustaw na 0 dla nieograniczonej liczby pętli."
-+			},
-+			"completionDelimiter": {
-+				"label": "Separator zakończenia",
-+				"description": "Jeśli ten tekst zostanie znaleziony w wyniku zakończenia, Ralph przestanie zapętlać."
-+			}
-+		},
- 		"execute": {
- 			"label": "Wykonaj",
- 			"description": "Automatycznie wykonuj dozwolone polecenia terminala bez konieczności zatwierdzania",
-
-file webview-ui/src/i18n/locales/pt-BR/settings.json
-
- 			"description": "Selecionar automaticamente a primeira resposta sugerida para perguntas de acompanhamento após o tempo limite configurado",
- 			"timeoutLabel": "Tempo de espera antes de selecionar automaticamente a primeira resposta"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Mostrar o botão Ralph no modo chat que habilita a capacidade de loop do agente autônomo",
-+			"loopLimit": {
-+				"label": "Limite de Loop",
-+				"description": "Número máximo de vezes que o Ralph reiniciará automaticamente a tarefa. Defina como 0 para loops ilimitados."
-+			},
-+			"completionDelimiter": {
-+				"label": "Delimitador de Conclusão",
-+				"description": "Se este texto for encontrado no resultado da conclusão, o Ralph parará de repetir o loop."
-+			}
-+		},
- 		"execute": {
- 			"label": "Executar",
- 			"description": "Executar automaticamente comandos de terminal permitidos sem exigir aprovação",
-
-file webview-ui/src/i18n/locales/ru/settings.json
-
- 			"description": "Автоматически выбирать первый предложенный ответ на дополнительные вопросы после настроенного тайм-аута",
- 			"timeoutLabel": "Время ожидания перед автоматическим выбором первого ответа"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Показать кнопку Ralph в режиме чата, которая включает возможность цикла автономного агента",
-+			"loopLimit": {
-+				"label": "Лимит циклов",
-+				"description": "Максимальное количество автоматических перезапусков задачи Ralph. Установите 0 для неограниченных циклов."
-+			},
-+			"completionDelimiter": {
-+				"label": "Разделитель завершения",
-+				"description": "Если этот текст найден в результате завершения, Ralph прекратит циклическое выполнение."
-+			}
-+		},
- 		"execute": {
- 			"label": "Выполнение",
- 			"description": "Автоматически выполнять разрешённые команды терминала без необходимости одобрения",
-
-file webview-ui/src/i18n/locales/th/settings.json
-
- 			"description": "เลือกคำตอบแรกที่แนะนำสำหรับคำถามติดตามโดยอัตโนมัติหลังจากหมดเวลาที่กำหนด",
- 			"timeoutLabel": "เวลารอก่อนเลือกคำตอบแรกโดยอัตโนมัติ"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "แสดงปุ่ม Ralph ในโหมดแชทที่เปิดใช้งานความสามารถในการวนซ้ำของตัวแทนอิสระ",
-+			"loopLimit": {
-+				"label": "จำกัดการวนซ้ำ",
-+				"description": "จำนวนครั้งสูงสุดที่ Ralph จะเริ่มงานใหม่โดยอัตโนมัติ ตั้งค่าเป็น 0 สำหรับการวนซ้ำไม่จำกัด"
-+			},
-+			"completionDelimiter": {
-+				"label": "ตัวคั่นการเสร็จสิ้น",
-+				"description": "หากพบข้อความนี้ในผลลัพธ์การเสร็จสิ้น Ralph จะหยุดการวนซ้ำ"
-+			}
-+		},
- 		"execute": {
- 			"label": "ดำเนินการ",
- 			"description": "ดำเนินการคำสั่งเทอร์มินัลที่อนุญาตโดยอัตโนมัติโดยไม่ต้องขออนุมัติ",
-
-file webview-ui/src/i18n/locales/tr/settings.json
-
- 			"description": "Yapılandırılan zaman aşımından sonra takip sorularına ilişkin ilk önerilen yanıtı otomatik olarak seç",
- 			"timeoutLabel": "İlk yanıtı otomatik olarak seçmeden önce beklenecek süre"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Sohbet modunda otonom ajan döngü yeteneğini etkinleştiren Ralph düğmesini göster",
-+			"loopLimit": {
-+				"label": "Döngü Sınırı",
-+				"description": "Ralph'ın görevi otomatik olarak yeniden başlatma maksimum sayısı. Sınırsız döngü için 0 olarak ayarlayın."
-+			},
-+			"completionDelimiter": {
-+				"label": "Tamamlama Sınırlayıcı",
-+				"description": "Tamamlama sonucunda bu metin bulunursa, Ralph döngüyü durduracaktır."
-+			}
-+		},
- 		"execute": {
- 			"label": "Yürüt",
- 			"description": "Onay gerektirmeden otomatik olarak izin verilen terminal komutlarını yürüt",
-
-file webview-ui/src/i18n/locales/uk/settings.json
-
- 			"description": "Автоматично вибирати першу запропоновану відповідь на додаткові питання після налаштованого тайм-ауту",
- 			"timeoutLabel": "Час очікування перед автоматичним вибором першої відповіді"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Показувати кнопку Ralph у режимі чату, що вмикає можливість циклу автономного агента",
-+			"loopLimit": {
-+				"label": "Ліміт циклів",
-+				"description": "Максимальна кількість разів, коли Ralph автоматично перезапускатиме завдання. Встановіть 0 для необмеженої кількості циклів."
-+			},
-+			"completionDelimiter": {
-+				"label": "Розділювач завершення",
-+				"description": "Якщо цей текст буде знайдено в результаті завершення, Ralph припинить циклічне виконання."
-+			}
-+		},
- 		"execute": {
- 			"label": "Виконати",
- 			"description": "Автоматично виконувати дозволені команди терміналу без необхідності затвердження",
-
-file webview-ui/src/i18n/locales/vi/settings.json
-
- 			"description": "Tự động chọn câu trả lời đầu tiên được đề xuất cho các câu hỏi tiếp theo sau thời gian chờ đã cấu hình",
- 			"timeoutLabel": "Thời gian chờ trước khi tự động chọn câu trả lời đầu tiên"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "Hiển thị nút Ralph trong chế độ chat để kích hoạt khả năng vòng lặp tác nhân tự trị",
-+			"loopLimit": {
-+				"label": "Giới hạn vòng lặp",
-+				"description": "Số lần tối đa Ralph sẽ tự động khởi động lại tác vụ. Đặt thành 0 cho các vòng lặp không giới hạn."
-+			},
-+			"completionDelimiter": {
-+				"label": "Dấu phân cách hoàn thành",
-+				"description": "Nếu văn bản này được tìm thấy trong kết quả hoàn thành, Ralph sẽ ngừng lặp lại."
-+			}
-+		},
- 		"execute": {
- 			"label": "Thực thi",
- 			"description": "Tự động thực thi các lệnh terminal được phép mà không cần phê duyệt",
-
-file webview-ui/src/i18n/locales/zh-CN/settings.json
-
- 			"description": "在配置的超时时间后自动选择后续问题的第一个建议答案",
- 			"timeoutLabel": "自动选择第一个答案前的等待时间"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "在聊天模式下显示 Ralph 按钮，启用自主代理循环能力",
-+			"loopLimit": {
-+				"label": "循环限制",
-+				"description": "Ralph 自动重启任务的最大次数。设置为 0 表示无限循环。"
-+			},
-+			"completionDelimiter": {
-+				"label": "完成分隔符",
-+				"description": "如果在完成结果中找到此文本，Ralph 将停止循环。"
-+			}
-+		},
- 		"execute": {
- 			"label": "执行",
- 			"description": "自动执行白名单中的命令而无需批准",
-
-file webview-ui/src/i18n/locales/zh-TW/settings.json
-
- 			"description": "在設定的逾時時間過後，自動選擇後續問題的第一個建議答案",
- 			"timeoutLabel": "自動選擇第一個答案前的等待時間"
- 		},
-+		"ralph": {
-+			"label": "Ralph",
-+			"description": "在聊天模式下顯示 Ralph 按鈕，啟用自主代理循環能力",
-+			"loopLimit": {
-+				"label": "循環限制",
-+				"description": "Ralph 自動重啟任務的最大次數。設置為 0 表示無限循環。"
-+			},
-+			"completionDelimiter": {
-+				"label": "完成分隔符",
-+				"description": "如果在完成結果中找到此文本，Ralph 將停止循環。"
-+			}
-+		},
- 		"execute": {
- 			"label": "執行命令",
- 			"description": "無需核准即可自動執行允許的終端機命令",

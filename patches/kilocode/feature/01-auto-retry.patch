@@ -598,7 +598,7 @@ label export const AutoApproveSettings = ({
  	alwaysAllowSubtasks,
 +	alwaysApproveResubmit, // kilocode_change
  	alwaysAllowExecute,
- 	alwaysAllowFollowupQuestions,
+
  	followupAutoApproveTimeoutMs = 60000,
  	allowedCommands,
  	allowedMaxRequests,
@@ -635,7 +635,7 @@ label export const AutoApproveSettings = ({
  						alwaysAllowSubtasks={alwaysAllowSubtasks}
 +						alwaysApproveResubmit={alwaysApproveResubmit ?? alwaysApproveResubmitState} // kilocode_change
  						alwaysAllowExecute={alwaysAllowExecute}
- 						alwaysAllowFollowupQuestions={alwaysAllowFollowupQuestions}
+
  						onToggle={(key, value) => setCachedStateField(key, value)}
 
 label export const AutoApproveSettings = ({
@@ -930,7 +930,7 @@ label export function useAutoApprovalToggles() {
  			alwaysAllowMcp,
  			alwaysAllowModeSwitch,
  			alwaysAllowSubtasks,
- 			alwaysAllowFollowupQuestions,
+
 +			alwaysApproveResubmit, // kilocode_change
  		],
  	)
