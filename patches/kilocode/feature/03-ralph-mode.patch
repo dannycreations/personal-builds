@@ -8,6 +8,7 @@ label export const globalSettingsSchema = z.object({
 +	ralphEnabled: z.boolean().optional(),
 +	ralphLoopLimit: z.number().int().min(0).optional(),
 +	ralphCompletionDelimiter: z.string().optional(),
++	ralphKeepCurrentTask: z.boolean().optional(),
  })
  
  export type GlobalSettings = z.infer<typeof globalSettingsSchema>
@@ -20,6 +21,7 @@ label export const EVALS_SETTINGS: RooCodeSettings = {
 +	alwaysAllowRalph: false,
 +	ralphLoopLimit: 5,
 +	ralphCompletionDelimiter: "<ralph>COMPLETED</ralph>",
++	ralphKeepCurrentTask: true,
  	alwaysAllowFollowupQuestions: true,
  	followupAutoApproveTimeoutMs: 0,
  	allowedCommands: ["*"],
@@ -68,6 +70,7 @@ label export type ExtensionState = Pick<
 +	| "ralphEnabled"
 +	| "ralphLoopLimit"
 +	| "ralphCompletionDelimiter"
++ | "ralphKeepCurrentTask"
  > & {
  	version: string
  	clineMessages: ClineMessage[]
@@ -80,6 +83,7 @@ label export interface WebviewMessage {
 +		| "ralphEnabled"
 +		| "ralphLoopLimit"
 +		| "ralphCompletionDelimiter"
++   | "ralphKeepCurrentTask"
  		| "requestModes"
  		| "switchMode"
  		| "debugSetting"
@@ -189,7 +193,11 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 +					}
 +				}, 1000)
 +
-+				await this.abortTask()
++				if (state.ralphKeepCurrentTask) {
++					await provider.deleteTaskWithId(this.taskId)
++				} else {
++					await this.abortTask()
++				}
 +				return true
 +			}
 +		}
@@ -274,6 +282,7 @@ label export class ClineProvider
 +			ralphEnabled,
 +			ralphLoopLimit,
 +			ralphCompletionDelimiter,
++			ralphKeepCurrentTask,
  		} = await this.getState()
  
  		// kilocode_change start: Get active model for virtual quota fallback UI display
@@ -296,6 +305,7 @@ label export class ClineProvider
 +			ralphEnabled: ralphEnabled ?? false,
 +			ralphLoopLimit: ralphLoopLimit ?? 5,
 +			ralphCompletionDelimiter: ralphCompletionDelimiter !== undefined ? ralphCompletionDelimiter : "<ralph>COMPLETED</ralph>",
++			ralphKeepCurrentTask: ralphKeepCurrentTask ?? true,
  		}
  	}
  
@@ -318,6 +328,7 @@ label export class ClineProvider
 +			ralphEnabled: stateValues.ralphEnabled ?? false,
 +			ralphLoopLimit: stateValues.ralphLoopLimit ?? 5,
 +			ralphCompletionDelimiter: stateValues.ralphCompletionDelimiter !== undefined ? stateValues.ralphCompletionDelimiter : "<ralph>COMPLETED</ralph>",
++			ralphKeepCurrentTask: stateValues.ralphKeepCurrentTask ?? true,
  		}
  	}
  
@@ -338,6 +349,10 @@ label export const webviewMessageHandler = async (
 +			break
 +		case "ralphCompletionDelimiter":
 +			await updateGlobalState("ralphCompletionDelimiter", message.text !== undefined ? message.text : "<ralph>COMPLETED</ralph>")
++			await provider.postStateToWebview()
++			break
++		case "ralphKeepCurrentTask":
++			await updateGlobalState("ralphKeepCurrentTask", message.bool ?? true)
 +			await provider.postStateToWebview()
 +			break
  		case "enhancePrompt":
@@ -421,9 +436,11 @@ label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
 +	alwaysAllowRalph?: boolean
 +	ralphLoopLimit?: number
 +	ralphCompletionDelimiter?: string
++	ralphKeepCurrentTask?: boolean
  	alwaysAllowFollowupQuestions?: boolean
  	followupAutoApproveTimeoutMs?: number
  	allowedCommands?: string[]
+ 	allowedMaxRequests?: number | undefined
 
 label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
 
@@ -433,6 +450,7 @@ label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
 +		| "alwaysAllowRalph"
 +		| "ralphLoopLimit"
 +		| "ralphCompletionDelimiter"
++		| "ralphKeepCurrentTask"
  		| "alwaysAllowFollowupQuestions"
  		| "followupAutoApproveTimeoutMs"
  		| "allowedCommands"
@@ -445,6 +463,7 @@ label export const AutoApproveSettings = ({
 +	alwaysAllowRalph,
 +	ralphLoopLimit,
 +	ralphCompletionDelimiter,
++	ralphKeepCurrentTask,
  	alwaysAllowFollowupQuestions,
  	followupAutoApproveTimeoutMs = 60000,
  	allowedCommands,
@@ -505,6 +524,19 @@ label export const AutoApproveSettings = ({
 +								<div className="text-vscode-descriptionForeground text-sm mt-1">
 +									If this text is found in the completion result, Ralph will stop looping
 +								</div>
++							</div>
++						</div>
++						<div className="mt-2">
++							<VSCodeCheckbox
++								checked={ralphKeepCurrentTask ?? true}
++								onChange={(e: any) => {
++									setCachedStateField("ralphKeepCurrentTask", e.target.checked)
++									vscode.postMessage({ type: "ralphKeepCurrentTask", bool: e.target.checked })
++								}}>
++								<span className="font-medium">Keep current task each loop</span>
++							</VSCodeCheckbox>
++							<div className="text-vscode-descriptionForeground text-sm mt-1 ml-6">
++								If enabled, Ralph will keep the current task as history
 +							</div>
 +						</div>
 +					</div>
@@ -577,6 +609,7 @@ label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props
 +		alwaysAllowRalph,
 +		ralphLoopLimit,
 +		ralphCompletionDelimiter,
++		ralphKeepCurrentTask,
  		alwaysAllowMcp,
  		alwaysAllowModeSwitch,
  		alwaysAllowSubtasks,
@@ -589,6 +622,7 @@ label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props
 +					alwaysAllowRalph: alwaysAllowRalph ?? undefined,
 +					ralphLoopLimit: ralphLoopLimit ?? 5,
 +					ralphCompletionDelimiter: ralphCompletionDelimiter !== undefined ? ralphCompletionDelimiter : "<ralph>COMPLETED</ralph>",
++					ralphKeepCurrentTask: ralphKeepCurrentTask ?? true,
  					alwaysAllowBrowser: alwaysAllowBrowser ?? undefined,
  					alwaysAllowMcp,
  					alwaysAllowModeSwitch,
@@ -601,6 +635,7 @@ label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props
 +							  alwaysAllowRalph={alwaysAllowRalph}
 +							  ralphLoopLimit={ralphLoopLimit}
 +							  ralphCompletionDelimiter={ralphCompletionDelimiter}
++							  ralphKeepCurrentTask={ralphKeepCurrentTask}
  								alwaysAllowModeSwitch={alwaysAllowModeSwitch}
  								alwaysAllowSubtasks={alwaysAllowSubtasks}
 
