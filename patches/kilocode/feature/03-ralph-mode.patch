@@ -194,9 +194,9 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 +				}, 1000)
 +
 +				if (state.ralphKeepCurrentTask) {
-+					await provider.deleteTaskWithId(this.taskId)
-+				} else {
 +					await this.abortTask()
++				} else {
++					await provider.deleteTaskWithId(this.taskId)
 +				}
 +				return true
 +			}
