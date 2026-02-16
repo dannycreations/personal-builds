@@ -1,0 +1,53 @@
+name: Morphe
+
+on:
+  schedule:
+    - cron: '0 11 * * 6'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WORK_DIR: morphe
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Local Repository
+        uses: actions/checkout@v6
+
+      - name: Checkout Target Repository
+        uses: ./.github/actions/check-changes
+        with:
+          target-repo: peternmuller/revanced-morphe-builder
+          target-branch: main
+          target-dir: ${{ env.WORK_DIR }}
+
+      - name: Prepare Workspace
+        uses: ./.github/actions/prepare-workspace
+        with:
+          target-dir: ${{ env.WORK_DIR }}
+          copy-to: ${{ env.WORK_DIR }}_patch
+
+      - name: Setup Java Environment
+        uses: actions/setup-java@v5
+        with:
+          java-version: 17
+          distribution: zulu
+
+      - name: Build APKs
+        working-directory: ${{ env.WORK_DIR }}
+        run: find "${{ env.WORK_DIR }}_patch" -maxdepth 1 -name "*-*.toml" -exec ./build.sh {} \;
+
+      - name: Publish Build and Update SHA
+        if: success()
+        uses: ./.github/actions/publish-build
+        with:
+          release-title: Morphe Nightly
+          release-tag: ${{ env.WORK_DIR }}
+          release-glob: '*/build/*.apk'
