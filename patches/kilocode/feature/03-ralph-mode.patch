@@ -33,6 +33,7 @@ label export interface CreateTaskOptions {
  	/** Initial status for the task's history item (e.g., "active" for child tasks) */
  	initialStatus?: "active" | "delegated" | "completed"
 +	ralphLoopCount?: number
++	mode?: string
  }
  
  export enum TaskStatus {
@@ -47,6 +48,7 @@ label export interface CreateTaskOptions {
  	task: z.string().optional(),
  	images: z.array(z.string()).optional(),
 +	ralphLoopCount: z.number().int().min(0).optional(),
++	mode: z.string().optional(),
  })
  
  export type TaskMetadata = z.infer<typeof taskMetadataSchema>
@@ -70,7 +72,7 @@ label export type ExtensionState = Pick<
 +	| "ralphEnabled"
 +	| "ralphLoopLimit"
 +	| "ralphCompletionDelimiter"
-+ | "ralphKeepCurrentTask"
++	| "ralphKeepCurrentTask"
  > & {
  	version: string
  	clineMessages: ClineMessage[]
@@ -83,7 +85,7 @@ label export interface WebviewMessage {
 +		| "ralphEnabled"
 +		| "ralphLoopLimit"
 +		| "ralphCompletionDelimiter"
-+   | "ralphKeepCurrentTask"
++		| "ralphKeepCurrentTask"
  		| "requestModes"
  		| "switchMode"
  		| "debugSetting"
@@ -137,9 +139,24 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
  			task: historyItem ? historyItem.task : task,
  			images: historyItem ? [] : images,
 +			ralphLoopCount: ralphLoopCount ?? 0,
++			mode: historyItem ? historyItem.mode : undefined,
  		}
  
  		// Normal use-case is usually retry similar history task with new workspace.
+
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 		try {
+ 			const state = await provider.getState()
+ 			this._taskMode = state?.mode || defaultModeSlug
++			this.metadata.mode = this._taskMode
+ 		} catch (error) {
+ 			// If there's an error getting state, use the default mode
+ 			this._taskMode = defaultModeSlug
++			this.metadata.mode = this._taskMode
+ 			// Use the provider's log method for better error visibility
+ 			const errorMessage = `Failed to initialize task mode: ${error instanceof Error ? error.message : String(error)}`
+ 			provider.log(errorMessage)
 
 label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
@@ -182,10 +199,17 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 +				const firstPrompt = this.metadata.task
 +				const images = this.metadata.images
 +
++				if (state.ralphKeepCurrentTask) {
++					await this.abortTask()
++				} else {
++					await provider.deleteTaskWithId(this.taskId)
++				}
++
 +				setTimeout(async () => {
 +					try {
 +						await provider.createTask(firstPrompt, images, undefined, {
 +							ralphLoopCount: currentLoopCount + 1,
++							mode: this.metadata.mode,
 +						})
 +						await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
 +					} catch (error) {
@@ -193,11 +217,6 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 +					}
 +				}, 1000)
 +
-+				if (state.ralphKeepCurrentTask) {
-+					await this.abortTask()
-+				} else {
-+					await provider.deleteTaskWithId(this.taskId)
-+				}
 +				return true
 +			}
 +		}
@@ -440,7 +459,6 @@ label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
  	alwaysAllowFollowupQuestions?: boolean
  	followupAutoApproveTimeoutMs?: number
  	allowedCommands?: string[]
- 	allowedMaxRequests?: number | undefined
 
 label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
 
