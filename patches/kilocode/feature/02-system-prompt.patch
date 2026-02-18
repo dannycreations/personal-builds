@@ -1,20 +1,24 @@
-file src/utils/shell.ts
-label function getSafeFallbackShell(): string {
+file packages/types/src/experiment.ts
+label import type { Keys, Equals, AssertEqual } from "./type-fu.js"
 
- // 5) Publicly Exposed Shell Getter
- // -----------------------------------------------------
+  * ExperimentId
+  */
  
--export function getShell(): string {
-+export function getShell(terminalShellIntegrationDisabled?: boolean): string {
- 	let shell: string | null = null
+-const kilocodeExperimentIds = ["morphFastApply", "speechToText"] as const // kilocode_change
++const kilocodeExperimentIds = ["rawSystemPrompt", "morphFastApply", "speechToText"] as const // kilocode_change
+ export const experimentIds = [
+ 	"powerSteering",
+ 	"multiFileApplyDiff",
+
+label export type ExperimentId = z.infer<typeof experimentIdsSchema>
+
+  */
  
-+  if (terminalShellIntegrationDisabled) {
-+  	return process.platform === "win32" ? SHELL_PATHS.CMD : SHELL_PATHS.SH
-+  }
-+
- 	// 1. Check VS Code config first.
- 	if (process.platform === "win32") {
- 		// Special logic for Windows
+ export const experimentsSchema = z.object({
++	rawSystemPrompt: z.boolean().optional(),
+ 	morphFastApply: z.boolean().optional(), // kilocode_change
+ 	speechToText: z.boolean().optional(), // kilocode_change
+ 	powerSteering: z.boolean().optional(),
 
 file src/core/prompts/sections/custom-system-prompt.ts
 label function interpolatePromptContent(content: string, variables: PromptVariables):
@@ -37,38 +41,172 @@ file src/core/prompts/system.ts
 +import { LANGUAGES } from "../../shared/language"
 +import { fileExistsAtPath } from "../../utils/fs"
 +import { safeReadFile } from "./sections/custom-system-prompt"
+ import * as vscode from "vscode"
+ import * as os from "os"
+ 
 
 label export const SYSTEM_PROMPT = async (
 
  	const mode =
  		getModeBySlug(inputMode, customModes)?.slug || modes.find((m) => m.slug === inputMode)?.slug || defaultModeSlug // kilocode_change: don't try to use non-existent modes
  
-+  const systemPath = path.join(os.homedir(), ".kilocode", "systems")
-+  const systemRolePath = path.join(systemPath, `role-${mode}.md`)
++  if (experiments?.rawSystemPrompt) {
++    const systemPath = path.join(os.homedir(), ".kilocode", "systems")
++    const systemRolePath = path.join(systemPath, `role-${mode}.md`)
 +
-+	if (await fileExistsAtPath(systemRolePath)) {
-+		const systemPrompt = (await Promise.all([
-+			safeReadFile(systemRolePath),
-+			safeReadFile(path.join(systemPath, "01-header.md")),
-+			safeReadFile(path.join(systemPath, "02-tool.md")),
-+			safeReadFile(path.join(systemPath, "03-mode.md")),
-+			safeReadFile(path.join(systemPath, "04-footer.md")),
-+			safeReadFile(path.join(cwd, "agent.md")),
-+	    safeReadFile(path.join(cwd, "agents.md")),
-+		])).filter(Boolean).join("\n\n").trim()
++    if (await fileExistsAtPath(systemRolePath)) {
++      const systemPrompt = (await Promise.all([
++        safeReadFile(systemRolePath),
++        safeReadFile(path.join(systemPath, "01-header.md")),
++        safeReadFile(path.join(systemPath, "02-tool.md")),
++        safeReadFile(path.join(systemPath, "03-footer.md")),
++        safeReadFile(path.join(cwd, "agent.md")),
++        safeReadFile(path.join(cwd, "agents.md")),
++      ])).filter(Boolean).join("\n\n").trim()
 +
-+   const languageIso = language ?? formatLanguage(vscode.env.language)
-+   const languageName = isLanguage(languageIso) ? LANGUAGES[languageIso] : languageIso
-+   const terminal = getShell(clineProviderState?.terminalShellIntegrationDisabled)
++      const languageIso = language ?? formatLanguage(vscode.env.language)
++      const languageName = isLanguage(languageIso) ? LANGUAGES[languageIso] : languageIso
++      const terminal = getShell(clineProviderState?.terminalShellIntegrationDisabled)
 +
-+		return systemPrompt
-+		  .replaceAll("{{OPERATING}}", osName())
-+			.replaceAll("{{TERMINAL}}", terminal.toPosix())
-+			.replaceAll("{{HOMEDIR}}", os.homedir().toPosix())
-+			.replaceAll("{{WORKDIR}}", cwd.toPosix())
-+			.replaceAll("{{LANGUAGE}}", `${languageName} (${languageIso})`)
-+	}
++      return systemPrompt
++        .replaceAll("{{OPERATING}}", osName())
++        .replaceAll("{{TERMINAL}}", terminal.toPosix())
++        .replaceAll("{{HOMEDIR}}", os.homedir().toPosix())
++        .replaceAll("{{WORKDIR}}", cwd.toPosix())
++        .replaceAll("{{LANGUAGE}}", `${languageName} (${languageIso})`)
++    }
++  }
 +
  	// Try to load custom system prompt from file
  	const variablesForPrompt: PromptVariables = {
  		workspace: cwd,
+
+file src/shared/__tests__/experiments.spec.ts
+label describe("experiments", () => {
+
+ 	describe("isEnabled", () => {
+ 		it("returns false when POWER_STEERING experiment is not enabled", () => {
+ 			const experiments: Record<ExperimentId, boolean> = {
++        rawSystemPrompt: false,
+ 				morphFastApply: false, // kilocode_change
+ 				speechToText: false, // kilocode_change
+ 				powerSteering: false,
+ 				multiFileApplyDiff: false,
+ 				preventFocusDisruption: false,
+ 				imageGeneration: false,
+ 				runSlashCommand: false,
+ 				multipleNativeToolCalls: false,
+ 				customTools: false,
+ 			}
+ 			expect(Experiments.isEnabled(experiments, EXPERIMENT_IDS.POWER_STEERING)).toBe(false)
+ 		})
+ 
+ 		it("returns true when experiment POWER_STEERING is enabled", () => {
+ 			const experiments: Record<ExperimentId, boolean> = {
++        rawSystemPrompt: false,
+ 				morphFastApply: false, // kilocode_change
+ 				speechToText: false, // kilocode_change
+ 				powerSteering: true,
+ 				multiFileApplyDiff: false,
+ 				preventFocusDisruption: false,
+ 				imageGeneration: false,
+ 				runSlashCommand: false,
+ 				multipleNativeToolCalls: false,
+ 				customTools: false,
+ 			}
+ 			expect(Experiments.isEnabled(experiments, EXPERIMENT_IDS.POWER_STEERING)).toBe(true)
+ 		})
+ 
+ 		it("returns false when experiment is not present", () => {
+ 			const experiments: Record<ExperimentId, boolean> = {
++        rawSystemPrompt: false,
+ 				morphFastApply: false, // kilocode_change
+ 				speechToText: false, // kilocode_change
+ 				powerSteering: false,
+
+file src/shared/experiments.ts
+
+ import type { AssertEqual, Equals, Keys, Values, ExperimentId, Experiments } from "@roo-code/types"
+ 
+ export const EXPERIMENT_IDS = {
++	RAW_SYSTEM_PROMPT: "rawSystemPrompt",
+ 	MORPH_FAST_APPLY: "morphFastApply", // kilocode_change
+ 	SPEECH_TO_TEXT: "speechToText", // kilocode_change
+ 	MULTI_FILE_APPLY_DIFF: "multiFileApplyDiff",
+
+label interface ExperimentConfig {
+
+ }
+ 
+ export const experimentConfigsMap: Record<ExperimentKey, ExperimentConfig> = {
++	RAW_SYSTEM_PROMPT: { enabled: false },
+ 	MORPH_FAST_APPLY: { enabled: false }, // kilocode_change
+ 	SPEECH_TO_TEXT: { enabled: true }, // kilocode_change
+ 	MULTI_FILE_APPLY_DIFF: { enabled: false },
+
+file src/utils/shell.ts
+label function getSafeFallbackShell(): string {
+
+ // 5) Publicly Exposed Shell Getter
+ // -----------------------------------------------------
+ 
+-export function getShell(): string {
++export function getShell(terminalShellIntegrationDisabled?: boolean): string {
+ 	let shell: string | null = null
+ 
++  if (terminalShellIntegrationDisabled) {
++  	return process.platform === "win32" ? SHELL_PATHS.CMD : SHELL_PATHS.SH
++  }
++
+ 	// 1. Check VS Code config first.
+ 	if (process.platform === "win32") {
+ 		// Special logic for Windows
+
+file webview-ui/src/components/settings/ExperimentalSettings.tsx
+
++import { VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
+ import React, { HTMLAttributes } from "react"
+ 
+ import type { Experiments, ImageGenerationProvider } from "@roo-code/types"
+
+label export const ExperimentalSettings = ({
+
+ 						const experimentKey = config[0]
+ 						const label = t(`settings:experimental.${experimentKey}.name`)
+ 
++            if (config[0] === "RAW_SYSTEM_PROMPT") {
++							return (
++								<SearchableSetting
++									key={config[0]}
++									settingId={`experimental-${config[0].toLowerCase()}`}
++									section="experimental"
++									label="Use raw system prompt">
++                  <div>
++                    <div className="flex items-center gap-2">
++                      <VSCodeCheckbox checked={experiments[EXPERIMENT_IDS.RAW_SYSTEM_PROMPT] ?? false} onChange={(e: any) => {
++                        setExperimentEnabled(EXPERIMENT_IDS.RAW_SYSTEM_PROMPT, e.target.checked)
++                      }}>
++                        <span className="font-medium">Use raw system prompt</span>
++                      </VSCodeCheckbox>
++                    </div>
++                    <p className="text-vscode-descriptionForeground text-sm mt-0">
++                      When enabled, Kilo Code will attempt to load the system prompt from ~/.kilocode/systems/ if it exists.
++                    </p>
++                  </div>
++								</SearchableSetting>
++							)
++						}
+ 						if (config[0] === "MULTI_FILE_APPLY_DIFF") {
+ 							return (
+ 								<SearchableSetting
+
+file webview-ui/src/context/__tests__/ExtensionStateContext.spec.tsx
+label describe("mergeExtensionState", () => {
+
+ 			...baseState,
+ 			apiConfiguration: { modelMaxThinkingTokens: 456, modelTemperature: 0.3 },
+ 			experiments: {
++        rawSystemPrompt: false,
+ 				powerSteering: true,
+ 				multiFileApplyDiff: true,
+ 				preventFocusDisruption: false,
