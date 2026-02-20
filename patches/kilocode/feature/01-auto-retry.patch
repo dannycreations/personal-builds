@@ -1,59 +1,12 @@
-file .changeset/six-guests-admire.md
-
-+---
-+"kilo-code": minor
-+---
-+
-+feat(retry): implement configurable delay and max retries
-
-file findings.md
-
-+# Task Findings & Discoveries
-+
-+## Requirements
-+
-+- Remove `requestRetryStrategy`.
-+- Default to constant retry strategy.
-+- Allow customizable delay for the constant retry strategy.
-+
-+## Research Findings
-+
-+- `requestRetryStrategy` is used in:
-+    - `packages/types/src/global-settings.ts`: Defined as an enum `["constant", "linear", "exponential"]`.
-+    - `src/core/task/Task.ts`: Used in `backoffAndAnnounce` to calculate `delaySeconds`.
-+    - `webview-ui/src/context/ExtensionStateContext.tsx`: Part of the extension state.
-+    - `webview-ui/src/components/settings/AutoApproveSettings.tsx`: UI for selecting the strategy.
-+    - `src/shared/ExtensionMessage.ts`: Message type for updating settings.
-+    - `src/core/webview/ClineProvider.ts`: Passing state to webview.
-+    - `cli/src/host/ExtensionHost.ts` and `cli/src/config/mapper.ts`: CLI configuration.
-+- The current implementation in `Task.ts` uses `requestDelaySeconds` as the base delay.
-+- The goal is to remove the strategy selection and always use a constant delay based on `requestDelaySeconds`.
-+
-+## Technical Decisions
-+
-+| Decision | Rationale |
-+| -------- | --------- |
-+| Remove `requestRetryStrategy` | Simplify retry logic and favor constant delay as requested. |
-+| Use `requestDelaySeconds` as the constant delay | It is already established as the base delay for retries. |
-+| Remove Strategy UI | Simplified the settings UI by removing the strategy dropdown since only constant delay is supported. |
-+
-+## Resources
-+
-+- `packages/types/src/global-settings.ts`
-+- `src/core/task/Task.ts`
-+- `webview-ui/src/components/settings/AutoApproveSettings.tsx`
-+- `src/shared/ExtensionMessage.ts`
-+- `webview-ui/src/context/ExtensionStateContext.tsx`
-
 file packages/types/src/global-settings.ts
 label export const globalSettingsSchema = z.object({
 
  	alwaysAllowDelete: z.boolean().optional(), // kilocode_change
  	writeDelayMs: z.number().min(0).optional(),
  	alwaysAllowBrowser: z.boolean().optional(),
-+	alwaysApproveResubmit: z.boolean().optional(), // kilocode_change
++	alwaysApproveResubmit: z.boolean().optional(),
  	requestDelaySeconds: z.number().optional(),
-+	requestRetryMax: z.number().optional(), // kilocode_change
++	requestRetryMax: z.number().min(0).optional(),
  	alwaysAllowMcp: z.boolean().optional(),
  	alwaysAllowModeSwitch: z.boolean().optional(),
  	alwaysAllowSubtasks: z.boolean().optional(),
@@ -63,9 +16,9 @@ label export const EVALS_SETTINGS: RooCodeSettings = {
  	alwaysAllowDelete: true, // kilocode_change
  	writeDelayMs: 1000,
  	alwaysAllowBrowser: true,
-+	alwaysApproveResubmit: true, // kilocode_change
++	alwaysApproveResubmit: true,
  	requestDelaySeconds: 10,
-+	requestRetryMax: 0, // kilocode_change
++	requestRetryMax: 0,
  	alwaysAllowMcp: true,
  	alwaysAllowModeSwitch: true,
  	alwaysAllowSubtasks: true,
@@ -76,9 +29,9 @@ label export type ExtensionState = Pick<
  	| "alwaysAllowModeSwitch"
  	| "alwaysAllowSubtasks"
  	| "alwaysAllowFollowupQuestions"
-+	| "alwaysApproveResubmit" // kilocode_change
++	| "alwaysApproveResubmit"
  	| "alwaysAllowExecute"
-
+ 	| "followupAutoApproveTimeoutMs"
  	| "allowedCommands"
 
 label export type ExtensionState = Pick<
@@ -86,176 +39,10 @@ label export type ExtensionState = Pick<
  	| "includeCurrentCost"
  	| "maxGitStatusFiles"
  	| "requestDelaySeconds"
-+	| "requestRetryMax" // kilocode_change
++	| "requestRetryMax"
  	| "selectedMicrophoneDevice" // kilocode_change: Selected microphone device for STT
-
+ > & {
  	version: string
-
-file planning.md
-
-+# Task Planning: Remove requestRetryStrategy and default to constant with customable delay
-+
-+## Goal
-+
-+Remove `requestRetryStrategy` from the codebase and replace it with a constant retry strategy that uses a customizable delay.
-+
-+## Current Phase
-+
-+Phase 6: I18n Implementation
-+
-+## Phases
-+
-+### Phase 1: Requirements & Discovery
-+
-+- [x] Search for `requestRetryStrategy` usage in the codebase.
-+- [x] Identify where the retry strategy is defined and used.
-+- [x] Document initial findings in `findings.md`.
-+- Status: complete
-+
-+### Phase 2: Planning & Structure
-+
-+- [x] Define the new constant retry strategy with customizable delay.
-+- [x] Identify necessary changes in types and interfaces.
-+- [x] Document key architectural decisions.
-+- Status: complete
-+
-+### Phase 3: Implementation
-+
-+- [x] Remove `requestRetryStrategy` from all relevant files.
-+- [x] Implement the new constant retry strategy with customizable delay.
-+- [x] Update UI components to allow customizing the delay if applicable.
-+- [x] Write all code to files before execution or testing.
-+- Status: complete
-+
-+### Phase 4: Testing & Verification
-+
-+- [x] Verify that all requirements from the Goal have been met.
-+- [x] Document all test results in `progress.md`.
-+- [x] Fix any discovered issues.
-+- Status: complete
-+
-+### Phase 5: I18n Implementation
-+
-+- [x] Implement translations for `retry` in `settings.json` for all supported languages.
-+- [x] Verify translations using `node scripts/find-missing-translations.js`.
-+- Status: complete
-+
-+### Phase 6: Delivery
-+
-+- [x] Perform a final review of all generated files and artifacts.
-+- [x] Ensure the final output is complete and coherent.
-+- [x] Deliver the final result to the user.
-+- Status: complete
-+
-+## Key Questions
-+
-+- What are the current values and types for `requestRetryStrategy`?
-+- Where should the new "customizable delay" be stored (settings, etc.)?
-+- How is the retry logic currently implemented?
-+
-+## Decisions Made
-+
-+| Decision | Rationale |
-+| -------- | --------- |
-+| Remove `requestRetryStrategy` | Simplify retry logic and favor constant delay as requested. |
-+| Use `requestDelaySeconds` as the constant delay | It is already established as the base delay for retries. |
-+| Remove Strategy UI | Simplified the settings UI by removing the strategy dropdown since only constant delay is supported. |
-+
-+## Errors Encountered
-+
-+| Error | Attempt | Resolution |
-+| ----- | ------- | ---------- |
-+| `findings.md` not found | 1 | Re-creating files. |
-+| `cli/src/host/ExtensionHost.ts` diff mismatch | 1 | Adjusted search block to match actual content. |
-+| `cli/src/config/mapper.ts` diff mismatch | 1 | Adjusted search block to match actual content. |
-
-file progress.md
-
-+# Task Progress & Logs
-+
-+## Session: 2026-01-17
-+
-+### Phase 1: Requirements & Discovery
-+
-+- Status: complete
-+- Started: 2026-01-17T02:54:00Z
-+- Actions Taken:
-+  - Initialized `planning.md`, `findings.md`, and `progress.md`.
-+  - Searched for `requestRetryStrategy` usage.
-+  - Analyzed key files: `Task.ts`, `global-settings.ts`, `AutoApproveSettings.tsx`.
-+- Files Created/Modified:
-+  - `planning.md` (modified)
-+  - `findings.md` (created)
-+  - `progress.md` (created)
-+
-+### Phase 2: Planning & Structure
-+
-+- Status: complete
-+- Started: 2026-01-17T02:56:00Z
-+- Actions Taken:
-+  - Identified all occurrences of `requestRetryStrategy`.
-+  - Planned the removal and replacement with constant delay logic.
-+
-+### Phase 3: Implementation
-+
-+- Status: complete
-+- Started: 2026-01-17T02:54:12Z
-+- Actions Taken:
-+  - Removed `requestRetryStrategy` from `global-settings.ts`.
-+  - Updated `Task.ts` to use constant delay based on `requestDelaySeconds`.
-+  - Updated `ExtensionStateContext.tsx` and `ClineProvider.ts` to remove strategy state.
-+  - Updated `webviewMessageHandler.ts` and `ExtensionMessage.ts` to remove strategy from communication.
-+  - Updated `AutoApproveSettings.tsx` and `SettingsView.tsx` to remove strategy UI.
-+  - Updated CLI host and mapper to remove strategy mapping.
-+  - Updated `auto-retry.spec.ts` test to reflect the changes.
-+- Files Created/Modified:
-+  - `packages/types/src/global-settings.ts` (modified)
-+  - `src/core/task/Task.ts` (modified)
-+  - `webview-ui/src/context/ExtensionStateContext.tsx` (modified)
-+  - `src/shared/ExtensionMessage.ts` (modified)
-+  - `src/core/webview/ClineProvider.ts` (modified)
-+  - `src/core/webview/webviewMessageHandler.ts` (modified)
-+  - `cli/src/host/ExtensionHost.ts` (modified)
-+  - `cli/src/config/mapper.ts` (modified)
-+  - `webview-ui/src/components/settings/AutoApproveSettings.tsx` (modified)
-+  - `webview-ui/src/components/settings/SettingsView.tsx` (modified)
-+  - `src/core/task/__tests__/auto-retry.spec.ts` (modified)
-+
-+### Phase 4: Testing & Verification
-+
-+- Status: complete
-+- Started: 2026-01-17T02:58:00Z
-+- Actions Taken:
-+  - Verified no remaining occurrences of `requestRetryStrategy` in source code using `search_files`.
-+  - Reviewed modified files for correctness.
-+- Files Created/Modified:
-+  - `progress.md` (modified)
-+
-+### Phase 5: I18n Implementation
-+
-+- Status: complete
-+- Started: 2026-01-17T03:59:30Z
-+- Actions Taken:
-+  - Ran `node scripts/find-missing-translations.js` to identify missing keys.
-+  - Implemented translations for `autoApprove.retry` in `settings.json` for all 21 non-English locales.
-+  - Verified all translations are complete using the validation script.
-+- Files Created/Modified:
-+  - `webview-ui/src/i18n/locales/*/settings.json` (modified)
-+
-+## Test Results
-+
-+| Test | Input | Expected Output | Actual Output | Status |
-+| ---- | ----- | --------------- | ------------- | ------ |
-+| Code Search | `search_files` for `requestRetryStrategy` | 0 results in source | 0 results in source | Ok |
-+| I18n Check | `node scripts/find-missing-translations.js` | All translations are complete | All translations are complete | Ok |
-+
-+## Detailed Error Log
-+
-+| Timestamp | Error | Attempt | Resolution Steps |
-+| --------- | ----- | ------- | ----------------- |
-+| 2026-01-17T02:53:13Z | `findings.md` not found | 1 | Re-creating files. |
-+| 2026-01-17T02:55:00Z | `cli/src/host/ExtensionHost.ts` diff mismatch | 1 | Adjusted search block to match actual content. |
-+| 2026-01-17T02:55:29Z | `cli/src/config/mapper.ts` diff mismatch | 1 | Adjusted search block to match actual content. |
 
 file src/core/auto-approval/index.ts
 label export type AutoApprovalState =
@@ -263,16 +50,16 @@ label export type AutoApprovalState =
  	| "alwaysAllowSubtasks"
  	| "alwaysAllowExecute"
  	| "alwaysAllowFollowupQuestions"
-+	| "alwaysApproveResubmit" // kilocode_change
++	| "alwaysApproveResubmit"
  
  // Some of these actions have additional settings associated with them.
  export type AutoApprovalStateOptions =
 
 file src/core/task/Task.ts
-label import { AutoApprovalHandler, checkAutoApproval } from "../auto-approval"
+label import { MessageManager } from "../message-manager"
 
- import { MessageManager } from "../message-manager"
  import { validateAndFixToolResultIds } from "./validateToolResultIds"
+ import { deduplicateToolUseBlocks } from "./deduplicateToolUseBlocks"
  
 -const MAX_EXPONENTIAL_BACKOFF_SECONDS = 600 // 10 minutes
  const DEFAULT_USAGE_COLLECTION_TIMEOUT_MS = 5000 // 5 seconds
@@ -291,12 +78,87 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 +							const retryMax = stateForBackoff?.requestRetryMax ?? 0
 +							if (
 +								stateForBackoff?.autoApprovalEnabled &&
-+								stateForBackoff?.alwaysApproveResubmit && // kilocode_change
++								stateForBackoff?.alwaysApproveResubmit &&
 +								(retryMax === 0 || (currentItem.retryAttempt ?? 0) < retryMax)
 +							) {
  								await this.backoffAndAnnounce(currentItem.retryAttempt ?? 0, error)
  
  								// Check if task was aborted during the backoff
+ 								if (this.abort) {
+ 									console.log(
+ 										`[Task#${this.taskId}.${this.instanceId}] Task aborted during mid-stream retry backoff`,
+ 									)
+ 									// Abort the entire task
+ 									this.abortReason = "user_cancelled"
+ 									await this.abortTask()
+ 									break
+ 								}
+-							}
+ 
+-							// Push the same content back onto the stack to retry, incrementing the retry attempt counter
+-							stack.push({
+-								userContent: currentUserContent,
+-								includeFileDetails: false,
+-								retryAttempt: (currentItem.retryAttempt ?? 0) + 1,
+-							})
++								// Push the same content back onto the stack to retry, incrementing the retry attempt counter
++								stack.push({
++									userContent: currentUserContent,
++									includeFileDetails: false,
++									retryAttempt: (currentItem.retryAttempt ?? 0) + 1,
++								})
+ 
+-							// Continue to retry the request
+-							continue
++								// Continue to retry the request
++								continue
++							} else {
++								// Prompt the user for retry decision if auto-resubmit is disabled or retry limit reached
++								const { response } = await this.ask(
++									"api_req_failed",
++									streamingFailedMessage ||
++										error.message ||
++										"The stream was terminated unexpectedly.",
++								)
++
++								if (response === "yesButtonClicked") {
++									await this.say("api_req_retried")
++
++									// Push the same content back to retry
++									stack.push({
++										userContent: currentUserContent,
++										includeFileDetails: false,
++										retryAttempt: (currentItem.retryAttempt ?? 0) + 1,
++									})
++
++									// Continue to retry the request
++									continue
++								} else {
++									// User declined to retry or task was aborted - fail the task
++									await this.say(
++										"error",
++										streamingFailedMessage ||
++											error.message ||
++											"The stream was terminated unexpectedly and the user declined to retry.",
++									)
++
++									await this.addToApiConversationHistory({
++										role: "assistant",
++										content: [
++											{
++												type: "text",
++												text: `Failure: The stream was terminated unexpectedly: ${streamingFailedMessage || error.message || "Unknown error"}`,
++											},
++										],
++									})
++
++									// End this iteration of recursivelyMakeClineRequests
++									return true
++								}
++							}
+ 						}
+ 					}
+ 				} finally {
 
 label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
@@ -307,7 +169,7 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 +					const retryMax = state?.requestRetryMax ?? 0
 +					if (
 +						state?.autoApprovalEnabled &&
-+						state?.alwaysApproveResubmit && // kilocode_change
++						state?.alwaysApproveResubmit &&
 +						(retryMax === 0 || (currentItem.retryAttempt ?? 0) < retryMax)
 +					) {
  						// Auto-retry with backoff - don't persist failure message when retrying
@@ -321,7 +183,7 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
  			// note that this api_req_failed ask is unique in that we only present this option if the api hasn't streamed any content yet (ie it fails on the first chunk due), as it would allow them to hit a retry button. However if the api failed mid-stream, it could be in any arbitrary state where some tools may have executed, so that error is handled differently and requires cancelling the task entirely.
 -			if (autoApprovalEnabled) {
 -				// Apply shared exponential backoff and countdown UX
-+			const retryMax = state?.requestRetryMax ?? 0 // kilocode_change
++			const retryMax = state?.requestRetryMax ?? 0
 +			if (autoApprovalEnabled && state?.alwaysApproveResubmit && (retryMax === 0 || retryAttempt < retryMax)) {
 +				// Apply shared backoff and countdown UX
  				await this.backoffAndAnnounce(retryAttempt, error)
@@ -330,11 +192,6 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
- 		}
- 	}
- 
--	// Shared exponential backoff for retries (first-chunk and mid-stream)
-+	// Shared backoff for retries (first-chunk and mid-stream)
  	private async backoffAndAnnounce(retryAttempt: number, error: any): Promise<void> {
  		try {
  			const state = await this.providerRef.deref()?.getState()
@@ -344,15 +201,15 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 -				Math.ceil(baseDelay * Math.pow(2, retryAttempt)),
 -				MAX_EXPONENTIAL_BACKOFF_SECONDS,
 -			)
+-
+-			// Respect provider rate limit window
+-			let rateLimitDelay = 0
+-			const rateLimit = (state?.apiConfiguration ?? this.apiConfiguration)?.rateLimitSeconds || 0
+-			if (Task.lastGlobalApiRequestTime && rateLimit > 0) {
+-				const elapsed = performance.now() - Task.lastGlobalApiRequestTime
+-				rateLimitDelay = Math.ceil(Math.min(rateLimit, Math.max(0, rateLimit * 1000 - elapsed) / 1000))
+-			}
 +			let requestDelaySeconds = state?.requestDelaySeconds ?? 10
- 
- 			// Respect provider rate limit window
- 			let rateLimitDelay = 0
- 			const rateLimit = (state?.apiConfiguration ?? this.apiConfiguration)?.rateLimitSeconds || 0
- 			if (Task.lastGlobalApiRequestTime && rateLimit > 0) {
- 				const elapsed = performance.now() - Task.lastGlobalApiRequestTime
- 				rateLimitDelay = Math.ceil(Math.min(rateLimit, Math.max(0, rateLimit * 1000 - elapsed) / 1000))
- 			}
  
  			// Prefer RetryInfo on 429 if present
  			if (error?.status === 429) {
@@ -367,138 +224,32 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
  			}
  
 -			const finalDelay = Math.max(exponentialDelay, rateLimitDelay)
-+			const finalDelay = Math.max(requestDelaySeconds, rateLimitDelay)
- 			if (finalDelay <= 0) {
- 				return
+-			if (finalDelay <= 0) {
+-				return
+-			}
+-
+ 			// Build header text; fall back to error message if none provided
+ 			let headerText
+ 			if (error.status) {
+ 				// Include both status code (for ChatRow parsing) and detailed message (for error details)
+ 				// Format: "<status>\n<message>" allows ChatRow to extract status via parseInt(text.substring(0,3))
+ 				// while preserving the full error message in errorDetails for debugging
+ 				const errorMessage = error?.message || "Unknown error"
+ 				headerText = `${error.status}\n${errorMessage}`
+ 			} else if (error?.message) {
+ 				headerText = error.message
+ 			} else {
+ 				headerText = "Unknown error"
  			}
-
-file src/core/task/__tests__/auto-retry.spec.ts
-
-+import * as os from "os"
-+import * as path from "path"
-+import * as vscode from "vscode"
-+import { Task } from "../Task"
-+
-+// Mock dependencies
-+vi.mock("delay", () => ({
-+	__esModule: true,
-+	default: vi.fn().mockResolvedValue(undefined),
-+}))
-+
-+vi.mock("p-wait-for", () => ({
-+	default: vi.fn().mockImplementation(async () => Promise.resolve()),
-+}))
-+
-+vi.mock("vscode", () => {
-+    return {
-+        workspace: {
-+            getConfiguration: vi.fn(() => ({ get: vi.fn() })),
-+        },
-+        env: {
-+            uriScheme: "vscode",
-+            language: "en",
-+        },
-+        EventEmitter: vi.fn().mockImplementation(() => ({
-+            event: vi.fn(),
-+            fire: vi.fn(),
-+        })),
-+    }
-+})
-+
-+describe("Auto-Retry Logic", () => {
-+	let mockProvider: any
-+	let mockApiConfig: any
-+	let mockExtensionContext: any
-+
-+	beforeEach(() => {
-+		mockExtensionContext = {
-+			globalState: {
-+				get: vi.fn(),
-+				update: vi.fn(),
-+				keys: vi.fn().mockReturnValue([]),
-+			},
-+			globalStorageUri: { fsPath: path.join(os.tmpdir(), "test-storage") },
-+			secrets: {
-+				get: vi.fn().mockResolvedValue(undefined),
-+				store: vi.fn().mockResolvedValue(undefined),
-+			},
-+			extensionUri: { fsPath: "/mock/path" },
-+			extension: { packageJSON: { version: "1.0.0" } },
-+		}
-+
-+		mockProvider = {
-+			getState: vi.fn().mockResolvedValue({
-+				autoApprovalEnabled: true,
-+				requestDelaySeconds: 1,
-+				requestRetryMax: 3,
-+			}),
-+			postMessageToWebview: vi.fn().mockResolvedValue(undefined),
-+			postStateToWebview: vi.fn().mockResolvedValue(undefined),
-+		}
-+
-+		mockApiConfig = {
-+			apiProvider: "anthropic",
-+			apiModelId: "claude-3-5-sonnet-20241022",
-+		}
-+	})
-+
-+	it("should calculate correct delay", async () => {
-+		const task = new Task({
-+			context: mockExtensionContext,
-+			provider: mockProvider,
-+			apiConfiguration: mockApiConfig,
-+			task: "test",
-+			startTask: false,
-+		})
-+
-+		const delay = (task as any).backoffAndAnnounce(1, new Error("test"))
-+		// We can't easily await this because it has a loop with delay()
-+		// but we can check the internal logic if we expose it or mock delay better
-+	})
-+
-+    it("should respect requestRetryMax and alwaysApproveResubmit", async () => {
-+        const state = {
-+            autoApprovalEnabled: true,
-+            alwaysApproveResubmit: true,
-+            requestRetryMax: 2
-+        }
-+
-+        const shouldRetry = (attempt: number) =>
-+            state.autoApprovalEnabled &&
-+            state.alwaysApproveResubmit &&
-+            (state.requestRetryMax === 0 || attempt < state.requestRetryMax)
-+
-+        // retryAttempt 0 < 2 -> should retry
-+        expect(shouldRetry(0)).toBe(true)
-+        // retryAttempt 1 < 2 -> should retry
-+        expect(shouldRetry(1)).toBe(true)
-+        // retryAttempt 2 == 2 -> should NOT retry
-+        expect(shouldRetry(2)).toBe(false)
-+
-+        // If alwaysApproveResubmit is false, should NOT retry
-+        state.alwaysApproveResubmit = false
-+        expect(shouldRetry(0)).toBe(false)
-+    })
-+
-+    it("should handle unlimited retries when requestRetryMax is 0", async () => {
-+        const state = {
-+            autoApprovalEnabled: true,
-+            alwaysApproveResubmit: true,
-+            requestRetryMax: 0
-+        }
-+
-+        const shouldRetry = (attempt: number) =>
-+            state.autoApprovalEnabled &&
-+            state.alwaysApproveResubmit &&
-+            (state.requestRetryMax === 0 || attempt < state.requestRetryMax)
-+
-+        expect(shouldRetry(100)).toBe(true)
-+
-+        // If alwaysApproveResubmit is false, should NOT retry even with unlimited retries
-+        state.alwaysApproveResubmit = false
-+        expect(shouldRetry(100)).toBe(false)
-+    })
-+})
+ 
+ 			headerText = headerText ? `${headerText}\n` : ""
+ 
+-			// Show countdown timer with exponential backoff
+-			for (let i = finalDelay; i > 0; i--) {
++			for (let i = requestDelaySeconds; i > 0; i--) {
+ 				// Check abort flag during countdown to allow early exit
+ 				if (this.abort) {
+ 					throw new Error(`[Task#${this.taskId}] Aborted during retry countdown`)
 
 file src/core/webview/ClineProvider.ts
 label export class ClineProvider
@@ -506,7 +257,7 @@ label export class ClineProvider
  			enhancementApiConfigId,
  			commitMessageApiConfigId, // kilocode_change
  			terminalCommandApiConfigId, // kilocode_change
-+			requestRetryMax, // kilocode_change
++			requestRetryMax,
  			autoApprovalEnabled,
  			customModes,
  			experiments,
@@ -516,7 +267,7 @@ label export class ClineProvider
  			dismissedNotificationIds, // kilocode_change
  			morphApiKey, // kilocode_change
  			fastApplyModel, // kilocode_change: Fast Apply model selection
-+			alwaysApproveResubmit, // kilocode_change
++			alwaysApproveResubmit,
  			fastApplyApiProvider, // kilocode_change: Fast Apply model api base url
  			alwaysAllowFollowupQuestions,
  			followupAutoApproveTimeoutMs,
@@ -526,7 +277,7 @@ label export class ClineProvider
  			alwaysAllowMcp: alwaysAllowMcp ?? false,
  			alwaysAllowModeSwitch: alwaysAllowModeSwitch ?? false,
  			alwaysAllowSubtasks: alwaysAllowSubtasks ?? false,
-+			alwaysApproveResubmit: alwaysApproveResubmit ?? true, // kilocode_change
++			alwaysApproveResubmit: alwaysApproveResubmit ?? true,
  			isBrowserSessionActive,
  			yoloMode: yoloMode ?? false, // kilocode_change
  			allowedMaxRequests,
@@ -536,8 +287,8 @@ label export class ClineProvider
  			includeCurrentTime: includeCurrentTime ?? true,
  			includeCurrentCost: includeCurrentCost ?? true,
  			maxGitStatusFiles: maxGitStatusFiles ?? 0,
-+			requestDelaySeconds: requestDelaySeconds ?? 10, // kilocode_change
-+			requestRetryMax: requestRetryMax ?? 0, // kilocode_change
++			requestDelaySeconds: requestDelaySeconds ?? 10,
++			requestRetryMax: requestRetryMax ?? 0,
  			taskSyncEnabled,
  			remoteControlEnabled,
  			imageGenerationProvider,
@@ -547,9 +298,9 @@ label export class ClineProvider
  			alwaysAllowModeSwitch: stateValues.alwaysAllowModeSwitch ?? true,
  			alwaysAllowSubtasks: stateValues.alwaysAllowSubtasks ?? true,
  			alwaysAllowFollowupQuestions: stateValues.alwaysAllowFollowupQuestions ?? false,
-+			alwaysApproveResubmit: stateValues.alwaysApproveResubmit ?? true, // kilocode_change
-+			requestDelaySeconds: stateValues.requestDelaySeconds ?? 10, // kilocode_change
-+			requestRetryMax: stateValues.requestRetryMax ?? 0, // kilocode_change
++			alwaysApproveResubmit: stateValues.alwaysApproveResubmit ?? true,
++			requestDelaySeconds: stateValues.requestDelaySeconds ?? 10,
++			requestRetryMax: stateValues.requestRetryMax ?? 0,
  			isBrowserSessionActive,
  			yoloMode: stateValues.yoloMode ?? false, // kilocode_change
  			followupAutoApproveTimeoutMs: stateValues.followupAutoApproveTimeoutMs ?? 60000,
@@ -576,9 +327,9 @@ label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
  	alwaysAllowMcp?: boolean
  	alwaysAllowModeSwitch?: boolean
  	alwaysAllowSubtasks?: boolean
-+	alwaysApproveResubmit?: boolean // kilocode_change
++	alwaysApproveResubmit?: boolean
  	alwaysAllowExecute?: boolean
-
+ 	alwaysAllowFollowupQuestions?: boolean
  	followupAutoApproveTimeoutMs?: number
 
 label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
@@ -586,30 +337,13 @@ label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
  		| "alwaysAllowMcp"
  		| "alwaysAllowModeSwitch"
  		| "alwaysAllowSubtasks"
-+		| "alwaysApproveResubmit" // kilocode_change
++		| "alwaysApproveResubmit"
  		| "alwaysAllowExecute"
-
+ 		| "alwaysAllowFollowupQuestions"
  		| "followupAutoApproveTimeoutMs"
 
 label export const AutoApproveSettings = ({
 
- 	alwaysAllowMcp,
- 	alwaysAllowModeSwitch,
- 	alwaysAllowSubtasks,
-+	alwaysApproveResubmit, // kilocode_change
- 	alwaysAllowExecute,
-
- 	followupAutoApproveTimeoutMs = 60000,
- 	allowedCommands,
- 	allowedMaxRequests,
- 	allowedMaxCost,
- 	showAutoApproveMenu, // kilocode_change
- 	yoloMode, // kilocode_change
- 	yoloGatekeeperApiConfigId, // kilocode_change: AI gatekeeper for YOLO mode
- 	deniedCommands,
- 	setCachedStateField,
- 	...props
- }: AutoApproveSettingsProps) => {
  	const { t } = useAppTranslation()
  	const [commandInput, setCommandInput] = useState("")
  	const [deniedCommandInput, setDeniedCommandInput] = useState("")
@@ -617,8 +351,8 @@ label export const AutoApproveSettings = ({
 +	const {
 +		autoApprovalEnabled,
 +		setAutoApprovalEnabled,
-+		alwaysApproveResubmit: alwaysApproveResubmitState, // kilocode_change
 +		listApiConfigMeta,
++		alwaysApproveResubmit,
 +		requestDelaySeconds,
 +		requestRetryMax,
 +		setRequestRetryMax,
@@ -633,9 +367,9 @@ label export const AutoApproveSettings = ({
  						alwaysAllowMcp={alwaysAllowMcp}
  						alwaysAllowModeSwitch={alwaysAllowModeSwitch}
  						alwaysAllowSubtasks={alwaysAllowSubtasks}
-+						alwaysApproveResubmit={alwaysApproveResubmit ?? alwaysApproveResubmitState} // kilocode_change
++						alwaysApproveResubmit={alwaysApproveResubmit}
  						alwaysAllowExecute={alwaysAllowExecute}
-
+ 						alwaysAllowFollowupQuestions={alwaysAllowFollowupQuestions}
  						onToggle={(key, value) => setCachedStateField(key, value)}
 
 label export const AutoApproveSettings = ({
@@ -643,12 +377,11 @@ label export const AutoApproveSettings = ({
  					</div>
  				)}
  
-+        {/* kilocode_change start */}
-+				{(alwaysApproveResubmit ?? alwaysApproveResubmitState) && (
++				{alwaysApproveResubmit && (
 +					<div className="flex flex-col gap-3 pl-3 border-l-2 border-vscode-button-background">
 +						<div className="flex items-center gap-4 font-bold">
 +							<span className="codicon codicon-refresh" />
-+							<div>{t("settings:autoApprove.retry.label")}</div>
++							<div>Retry</div>
 +						</div>
 +						<div className="space-y-4">
 +							<div className="flex gap-4">
@@ -668,13 +401,12 @@ label export const AutoApproveSettings = ({
 +												})
 +											}}
 +										/>
-+										<span className="w-12 text-right">{requestDelaySeconds ?? 5}s</span>
++										<span className="w-12 text-right">{requestDelaySeconds ?? 10}s</span>
 +									</div>
 +									<div className="text-vscode-descriptionForeground text-sm mt-1">
-+										{t("settings:autoApprove.retry.delayLabel")}
++										Base delay between retries (seconds)
 +									</div>
 +								</div>
-+
 +								<div className="flex-1">
 +									<div className="flex items-center gap-2">
 +										<Slider
@@ -698,15 +430,13 @@ label export const AutoApproveSettings = ({
 +										</span>
 +									</div>
 +									<div className="text-vscode-descriptionForeground text-sm mt-1">
-+										{t("settings:autoApprove.retry.retriesLabel")}
++										Maximum auto-retries for API requests
 +									</div>
 +								</div>
 +							</div>
-+
 +						</div>
 +					</div>
 +				)}
-+        {/* kilocode_change end */}
 +
  				{alwaysAllowExecute && (
  					<div className="flex flex-col gap-3 pl-3 border-l-2 border-vscode-button-background">
@@ -718,9 +448,9 @@ label type AutoApproveToggles = Pick<
  	| "alwaysAllowMcp"
  	| "alwaysAllowModeSwitch"
  	| "alwaysAllowSubtasks"
-+	| "alwaysApproveResubmit" // kilocode_change
++	| "alwaysApproveResubmit"
  	| "alwaysAllowExecute"
-
+ 	| "alwaysAllowFollowupQuestions"
  >
 
 label export const autoApproveSettingsConfig: Record<AutoApproveSetting, AutoApproveCo
@@ -728,15 +458,13 @@ label export const autoApproveSettingsConfig: Record<AutoApproveSetting, AutoApp
  		icon: "list-tree",
  		testId: "always-allow-subtasks-toggle",
  	},
-+	// kilocode_change start
 +	alwaysApproveResubmit: {
 +		key: "alwaysApproveResubmit",
-+		labelKey: "settings:autoApprove.retry.label",
-+		descriptionKey: "settings:autoApprove.retry.description",
++		labelKey: "Retry",
++		descriptionKey: "Automatically retry requests when the model fails to provide a response or when a rate limit is reached",
 +		icon: "refresh",
 +		testId: "always-approve-resubmit-toggle",
 +	},
-+	// kilocode_change end
  	alwaysAllowExecute: {
  		key: "alwaysAllowExecute",
  		labelKey: "settings:autoApprove.execute.label",
@@ -747,9 +475,9 @@ label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props
  		alwaysAllowMcp,
  		alwaysAllowModeSwitch,
  		alwaysAllowSubtasks,
-+		alwaysApproveResubmit, // kilocode_change
-+		requestDelaySeconds, // kilocode_change
-+		requestRetryMax, // kilocode_change
++		alwaysApproveResubmit,
++		requestDelaySeconds,
++		requestRetryMax,
  		alwaysAllowWrite,
  		alwaysAllowWriteOutsideWorkspace,
  		alwaysAllowWriteProtected,
@@ -759,9 +487,9 @@ label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props
  					alwaysAllowBrowser: alwaysAllowBrowser ?? undefined,
  					alwaysAllowMcp,
  					alwaysAllowModeSwitch,
-+					alwaysApproveResubmit, // kilocode_change
-+					requestDelaySeconds, // kilocode_change
-+					requestRetryMax, // kilocode_change
++					alwaysApproveResubmit,
++					requestDelaySeconds,
++					requestRetryMax,
  					allowedCommands: allowedCommands ?? [],
  					deniedCommands: deniedCommands ?? [],
  					// Note that we use `null` instead of `undefined` since `JSON.stringify`
@@ -769,9 +497,9 @@ label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props
 label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props, ref)
 
  								alwaysAllowMcp={alwaysAllowMcp}
-
+ 								alwaysAllowModeSwitch={alwaysAllowModeSwitch}
  								alwaysAllowSubtasks={alwaysAllowSubtasks}
-+							  alwaysApproveResubmit={alwaysApproveResubmit} // kilocode_change
++								alwaysApproveResubmit={alwaysApproveResubmit}
  								alwaysAllowExecute={alwaysAllowExecute}
  								alwaysAllowFollowupQuestions={alwaysAllowFollowupQuestions}
  								followupAutoApproveTimeoutMs={followupAutoApproveTimeoutMs}
@@ -782,7 +510,7 @@ label describe("AutoApproveToggle", () => {
  		alwaysAllowMcp: false,
  		alwaysAllowModeSwitch: true,
  		alwaysAllowSubtasks: false,
-+		alwaysApproveResubmit: false, // kilocode_change
++		alwaysApproveResubmit: false,
  		alwaysAllowExecute: true,
  		alwaysAllowFollowupQuestions: false,
  		onToggle: mockOnToggle,
@@ -793,8 +521,8 @@ label export interface ExtensionStateContextType extends ExtensionState {
  	setShowDiffStats: (value: boolean) => void // kilocode_change
  	hideCostBelowThreshold?: number // kilocode_change
  	setHideCostBelowThreshold: (value: number) => void // kilocode_change
-+	requestRetryMax?: number // kilocode_change
-+	setRequestRetryMax: (value: number) => void // kilocode_change
++	requestRetryMax?: number
++	setRequestRetryMax: (value: number) => void
  	hoveringTaskTimeline?: boolean // kilocode_change
  	setHoveringTaskTimeline: (value: boolean) => void // kilocode_change
  	systemNotificationsEnabled?: boolean // kilocode_change
@@ -804,8 +532,8 @@ label export interface ExtensionStateContextType extends ExtensionState {
  	setAlwaysAllowMcp: (value: boolean) => void
  	setAlwaysAllowModeSwitch: (value: boolean) => void
  	setAlwaysAllowSubtasks: (value: boolean) => void
-+	alwaysApproveResubmit: boolean // kilocode_change
-+	setAlwaysApproveResubmit: (value: boolean) => void // kilocode_change
++	alwaysApproveResubmit: boolean
++	setAlwaysApproveResubmit: (value: boolean) => void
  	setBrowserToolEnabled: (value: boolean) => void
  	setShowRooIgnoredFiles: (value: boolean) => void
  	setShowAutoApproveMenu: (value: boolean) => void // kilocode_change
@@ -815,7 +543,7 @@ label export interface ExtensionStateContextType extends ExtensionState {
  	setDeniedCommands: (value: string[]) => void
  	setAllowedMaxRequests: (value: number | undefined) => void
  	setAllowedMaxCost: (value: number | undefined) => void
-+	setRequestDelaySeconds: (value: number) => void // kilocode_change
++	setRequestDelaySeconds: (value: number) => void
  	setSoundEnabled: (value: boolean) => void
  	setSoundVolume: (value: number) => void
  	terminalShellIntegrationTimeout?: number
@@ -826,33 +554,31 @@ label export const ExtensionStateContextProvider: React.FC<{ children: React.Rea
  		alwaysAllowReadOnly: true, // kilocode_change
  		alwaysAllowDelete: false, // kilocode_change
 -		requestDelaySeconds: 5,
-+		alwaysApproveResubmit: true, // kilocode_change
++		alwaysApproveResubmit: true,
 +		requestDelaySeconds: 10,
-+		requestRetryMax: 0, // kilocode_change
++		requestRetryMax: 0,
  		currentApiConfigName: "default",
  		listApiConfigMeta: [],
  		mode: defaultModeSlug,
 
 label export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 
- 	const [prevCloudIsAuthenticated, setPrevCloudIsAuthenticated] = useState(false)
  	const [includeCurrentTime, setIncludeCurrentTime] = useState(true)
  	const [includeCurrentCost, setIncludeCurrentCost] = useState(true)
-+	// kilocode_change start
+ 
 +	const [alwaysApproveResubmit, setAlwaysApproveResubmit] = useState(true)
 +	const [requestDelaySeconds, setRequestDelaySeconds] = useState(10)
 +	const [requestRetryMax, setRequestRetryMax] = useState(0)
-+	// kilocode_change end
- 
++
  	const setListApiConfigMeta = useCallback(
  		(value: ProviderSettingsEntry[]) => setState((prevState) => ({ ...prevState, listApiConfigMeta: value })),
+ 		[],
 
 label export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 
  					if ((newState as any).includeCurrentCost !== undefined) {
  						setIncludeCurrentCost((newState as any).includeCurrentCost)
  					}
-+					// kilocode_change start
 +					if (newState.alwaysApproveResubmit !== undefined) {
 +						setAlwaysApproveResubmit(newState.alwaysApproveResubmit)
 +					}
@@ -862,7 +588,6 @@ label export const ExtensionStateContextProvider: React.FC<{ children: React.Rea
 +					if (newState.requestRetryMax !== undefined) {
 +						setRequestRetryMax(newState.requestRetryMax)
 +					}
-+					// kilocode_change end
  					// Handle marketplace data if present in state message
  					if (newState.marketplaceItems !== undefined) {
  						setMarketplaceItems(newState.marketplaceItems)
@@ -872,8 +597,8 @@ label export const ExtensionStateContextProvider: React.FC<{ children: React.Rea
  		setAlwaysAllowMcp: (value) => setState((prevState) => ({ ...prevState, alwaysAllowMcp: value })),
  		setAlwaysAllowModeSwitch: (value) => setState((prevState) => ({ ...prevState, alwaysAllowModeSwitch: value })),
  		setAlwaysAllowSubtasks: (value) => setState((prevState) => ({ ...prevState, alwaysAllowSubtasks: value })),
-+		alwaysApproveResubmit, // kilocode_change
-+		setAlwaysApproveResubmit, // kilocode_change
++		alwaysApproveResubmit,
++		setAlwaysApproveResubmit,
  		setAlwaysAllowFollowupQuestions,
  		setFollowupAutoApproveTimeoutMs: (value) =>
  			setState((prevState) => ({ ...prevState, followupAutoApproveTimeoutMs: value })),
@@ -882,8 +607,8 @@ label export const ExtensionStateContextProvider: React.FC<{ children: React.Rea
  		setDeniedCommands: (value) => setState((prevState) => ({ ...prevState, deniedCommands: value })),
  		setAllowedMaxRequests: (value) => setState((prevState) => ({ ...prevState, allowedMaxRequests: value })),
  		setAllowedMaxCost: (value) => setState((prevState) => ({ ...prevState, allowedMaxCost: value })),
-+		requestDelaySeconds, // kilocode_change
-+		setRequestDelaySeconds, // kilocode_change
++		requestDelaySeconds,
++		setRequestDelaySeconds,
  		setSoundEnabled: (value) => setState((prevState) => ({ ...prevState, soundEnabled: value })),
  		setSoundVolume: (value) => setState((prevState) => ({ ...prevState, soundVolume: value })),
  		setTtsEnabled: (value) => setState((prevState) => ({ ...prevState, ttsEnabled: value })),
@@ -893,8 +618,8 @@ label export const ExtensionStateContextProvider: React.FC<{ children: React.Rea
  		setSendMessageOnEnter: (value) => setState((prevState) => ({ ...prevState, sendMessageOnEnter: value })), // kilocode_change
  		setHideCostBelowThreshold: (value) =>
  			setState((prevState) => ({ ...prevState, hideCostBelowThreshold: value })),
-+		requestRetryMax, // kilocode_change
-+		setRequestRetryMax, // kilocode_change
++		requestRetryMax,
++		setRequestRetryMax,
  		setHoveringTaskTimeline: (value) => setState((prevState) => ({ ...prevState, hoveringTaskTimeline: value })),
  		setShowTimestamps: (value) => setState((prevState) => ({ ...prevState, showTimestamps: value })),
  		setShowDiffStats: (value) => setState((prevState) => ({ ...prevState, showDiffStats: value })), // kilocode_change
@@ -904,8 +629,8 @@ label export function useAutoApprovalToggles() {
 
  		alwaysAllowModeSwitch,
  		alwaysAllowSubtasks,
-
-+		alwaysApproveResubmit, // kilocode_change
+ 		alwaysAllowFollowupQuestions,
++		alwaysApproveResubmit,
  	} = useExtensionState()
  
  	const toggles = useMemo(
@@ -918,8 +643,8 @@ label export function useAutoApprovalToggles() {
  			alwaysAllowMcp,
  			alwaysAllowModeSwitch,
  			alwaysAllowSubtasks,
-
-+			alwaysApproveResubmit, // kilocode_change
+ 			alwaysAllowFollowupQuestions,
++			alwaysApproveResubmit,
  		}),
  		[
  			alwaysAllowReadOnly,
@@ -930,330 +655,8 @@ label export function useAutoApprovalToggles() {
  			alwaysAllowMcp,
  			alwaysAllowModeSwitch,
  			alwaysAllowSubtasks,
-
-+			alwaysApproveResubmit, // kilocode_change
+ 			alwaysAllowFollowupQuestions,
++			alwaysApproveResubmit,
  		],
  	)
  
-
-file webview-ui/src/i18n/locales/ar/settings.json
-
- 		"retry": {
- 			"label": "إعادة المحاولة",
- 			"description": "إعادة محاولة طلبات API الفاشلة تلقائيًا",
--			"delayLabel": "تأخير قبل الإعادة"
-+			"delayLabel": "تأخير قبل الإعادة",
-+			"retriesLabel": "الحد الأقصى لعدد مرات إعادة المحاولة التلقائية لطلبات API"
- 		},
- 		"mcp": {
- 			"label": "MCP",
-
-file webview-ui/src/i18n/locales/ca/settings.json
-
- 			"label": "Navegador",
- 			"description": "Realitzar accions del navegador automàticament sense requerir aprovació. Nota: Només s'aplica quan el model admet l'ús de l'ordinador"
- 		},
-+		"retry": {
-+			"label": "Reintentar",
-+			"description": "Torna a provar automàticament les sol·licituds quan el model no proporciona una resposta o quan s'assoleix un límit de taxa.",
-+			"delayLabel": "Retard base entre reintents (segons)",
-+			"retriesLabel": "Nombre màxim de reintents automàtics per a sol·licituds d'API"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "Habilitar l'aprovació automàtica d'eines MCP individuals a la vista de Servidors MCP (requereix tant aquesta configuració com la casella \"Permetre sempre\" de l'eina)"
-
-file webview-ui/src/i18n/locales/cs/settings.json
-
- 		},
- 		"retry": {
- 			"label": "Zkusit znovu",
--			"description": "Automaticky opakovat neúspěšné požadavky API, když server vrátí chybovou odpověď",
--			"delayLabel": "Zpoždění před opakováním požadavku"
-+			"description": "Automaticky opakovat požadavky, když model neposkytne odpověď nebo když je dosaženo limitu sazeb.",
-+			"delayLabel": "Základní zpoždění mezi pokusy (sekundy)",
-+			"retriesLabel": "Maximální počet automatických opakování pro požadavky API"
- 		},
- 		"mcp": {
- 			"label": "MCP",
-
-file webview-ui/src/i18n/locales/de/settings.json
-
- 			"label": "Browser",
- 			"description": "Browser-Aktionen automatisch ohne Genehmigung durchführen. Hinweis: Gilt nur, wenn das Modell Computer-Nutzung unterstützt"
- 		},
-+		"retry": {
-+			"label": "Wiederholen",
-+			"description": "Anfragen automatisch wiederholen, wenn das Modell keine Antwort liefert oder wenn ein Ratenlimit erreicht wird.",
-+			"delayLabel": "Basisverzögerung zwischen Wiederholungsversuchen (Sekunden)",
-+			"retriesLabel": "Maximale automatische Wiederholungsversuche für API-Anfragen"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "Automatische Genehmigung einzelner MCP-Tools in der MCP-Server-Ansicht aktivieren (erfordert sowohl diese Einstellung als auch das 'Immer erlauben'-Kontrollkästchen des Tools)"
-
-file webview-ui/src/i18n/locales/en/settings.json
-
- 			"description": "Automatically select the first suggested answer for follow-up questions after the configured timeout",
- 			"timeoutLabel": "Time to wait before auto-selecting the first answer"
- 		},
-+    "retry": {
-+			"label": "Retry",
-+			"description": "Automatically retry requests when the model fails to provide a response or when a rate limit is reached.",
-+			"delayLabel": "Base delay between retries (seconds)",
-+			"retriesLabel": "Maximum auto-retries for API requests"
-+		},
- 		"execute": {
- 			"label": "Execute",
- 			"description": "Automatically execute allowed terminal commands without requiring approval",
-
-file webview-ui/src/i18n/locales/es/settings.json
-
- 			"label": "Navegador",
- 			"description": "Realizar acciones del navegador automáticamente sin requerir aprobación. Nota: Solo se aplica cuando el modelo admite el uso del ordenador"
- 		},
-+		"retry": {
-+			"label": "Reintentar",
-+			"description": "Reintentar automáticamente las solicitudes cuando el modelo no proporciona una respuesta o cuando se alcanza un límite de tasa.",
-+			"delayLabel": "Retraso base entre reintentos (segundos)",
-+			"retriesLabel": "Máximo de reintentos automáticos para solicitudes de API"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "Habilitar la aprobación automática de herramientas MCP individuales en la vista de Servidores MCP (requiere tanto esta configuración como la casilla \"Permitir siempre\" de la herramienta)"
-
-file webview-ui/src/i18n/locales/fr/settings.json
-
- 			"label": "Navigateur",
- 			"description": "Effectuer automatiquement des actions du navigateur sans nécessiter d'approbation. Remarque : S'applique uniquement lorsque le modèle prend en charge l'utilisation de l'ordinateur"
- 		},
-+		"retry": {
-+			"label": "Réessayer",
-+			"description": "Réessayer automatiquement les requêtes lorsque le modèle ne fournit pas de réponse ou lorsqu'une limite de débit est atteinte.",
-+			"delayLabel": "Délai de base entre les tentatives (secondes)",
-+			"retriesLabel": "Nombre maximal de tentatives automatiques pour les requêtes API"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "Activer l'approbation automatique des outils MCP individuels dans la vue des serveurs MCP (nécessite à la fois ce paramètre et la case à cocher \"Toujours autoriser\" de l'outil)"
-
-file webview-ui/src/i18n/locales/hi/settings.json
-
- 			"label": "हटाएं",
- 			"description": "अनुमोदन की आवश्यकता के बिना स्वचालित रूप से फाइलें और निर्देशिकाएं हटाएं"
- 		},
-+		"retry": {
-+			"label": "पुनः प्रयास करें",
-+			"description": "जब मॉडल प्रतिक्रिया देने में विफल रहता है या जब दर सीमा तक पहुँच जाती है तो स्वचालित रूप से अनुरोधों का पुनः प्रयास करें।",
-+			"delayLabel": "पुनः प्रयासों के बीच आधार विलंब (सेकंड)",
-+			"retriesLabel": "API अनुरोधों के लिए अधिकतम स्वतः-पुनः प्रयास"
-+		},
- 		"browser": {
- 			"label": "ब्राउज़र",
- 			"description": "अनुमोदन की आवश्यकता के बिना स्वचालित रूप से ब्राउज़र क्रियाएँ करें — नोट: केवल तभी लागू होता है जब मॉडल कंप्यूटर उपयोग का समर्थन करता है"
-
-file webview-ui/src/i18n/locales/id/settings.json
-
- 			"label": "Browser",
- 			"description": "Secara otomatis melakukan aksi browser tanpa memerlukan persetujuan. Catatan: Hanya berlaku ketika model mendukung computer use"
- 		},
-+		"retry": {
-+			"label": "Coba Lagi",
-+			"description": "Secara otomatis mencoba kembali permintaan saat model gagal memberikan respons atau saat batas laju tercapai.",
-+			"delayLabel": "Penundaan dasar antar percobaan ulang (detik)",
-+			"retriesLabel": "Maksimum percobaan ulang otomatis untuk permintaan API"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "Aktifkan auto-approval tool MCP individual di tampilan Server MCP (memerlukan pengaturan ini dan checkbox \"Selalu izinkan\" tool tersebut)"
-
-file webview-ui/src/i18n/locales/it/settings.json
-
- 		},
- 		"retry": {
- 			"label": "Riprova",
--			"description": "Riprova automaticamente le richieste API fallite quando il server restituisce una risposta di errore",
--			"delayLabel": "Ritardo prima di riprovare la richiesta"
-+			"description": "Riprova automaticamente le richieste quando il modello non fornisce una risposta o quando viene raggiunto un limite di frequenza.",
-+			"delayLabel": "Ritardo di base tra i tentativi (secondi)",
-+			"retriesLabel": "Numero massimo di tentativi automatici per le richieste API"
- 		},
- 		"mcp": {
- 			"label": "MCP",
-
-file webview-ui/src/i18n/locales/ja/settings.json
-
- 		},
- 		"retry": {
- 			"label": "再試行",
--			"description": "サーバーがエラーレスポンスを返した場合、自動的に失敗したAPIリクエストを再試行",
--			"delayLabel": "リクエスト再試行前の遅延"
-+			"description": "モデルが応答を返さない場合や、レート制限に達した場合に、リクエストを自動的に再試行します。",
-+			"delayLabel": "再試行間の基本遅延（秒）",
-+			"retriesLabel": "APIリクエストの最大自動再試行回数"
- 		},
- 		"mcp": {
- 			"label": "MCP",
-
-file webview-ui/src/i18n/locales/ko/settings.json
-
- 			"label": "브라우저",
- 			"description": "승인 없이 자동으로 브라우저 작업 수행 — 참고: 모델이 컴퓨터 사용을 지원할 때만 적용됩니다"
- 		},
-+		"retry": {
-+			"label": "재시도",
-+			"description": "모델이 응답을 제공하지 못하거나 속도 제한에 도달했을 때 요청을 자동으로 재시도합니다.",
-+			"delayLabel": "재시도 간 기본 지연 시간(초)",
-+			"retriesLabel": "API 요청에 대한 최대 자동 재시도 횟수"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "MCP 서버 보기에서 개별 MCP 도구의 자동 승인 활성화(이 설정과 도구의 \"항상 허용\" 체크박스 모두 필요)"
-
-file webview-ui/src/i18n/locales/nl/settings.json
-
- 			"label": "Browser",
- 			"description": "Automatisch browseracties uitvoeren zonder goedkeuring. Let op: geldt alleen als het model computergebruik ondersteunt."
- 		},
-+		"retry": {
-+			"label": "Opnieuw proberen",
-+			"description": "Aanvragen automatisch opnieuw proberen wanneer het model geen antwoord geeft of wanneer een snelheidslimiet is bereikt.",
-+			"delayLabel": "Basisvertraging tussen pogingen (seconden)",
-+			"retriesLabel": "Maximaal aantal automatische herpogingen voor API-aanvragen"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "Automatische goedkeuring van individuele MCP-tools in het MCP-serversoverzicht inschakelen (vereist zowel deze instelling als het selectievakje 'Altijd toestaan' bij de tool)"
-
-file webview-ui/src/i18n/locales/pl/settings.json
-
- 			"label": "Przeglądarka",
- 			"description": "Automatycznie wykonuj akcje przeglądarki bez konieczności zatwierdzania. Uwaga: Dotyczy tylko gdy model obsługuje używanie komputera"
- 		},
-+		"retry": {
-+			"label": "Ponów",
-+			"description": "Automatycznie ponawiaj żądania, gdy model nie dostarczy odpowiedzi lub gdy zostanie osiągnięty limit szybkości.",
-+			"delayLabel": "Podstawowe opóźnienie między próbami (sekundy)",
-+			"retriesLabel": "Maksymalna liczba automatycznych powtórzeń dla żądań API"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "Włącz automatyczne zatwierdzanie poszczególnych narzędzi MCP w widoku Serwerów MCP (wymaga zarówno tego ustawienia, jak i pola wyboru \"Zawsze zezwalaj\" narzędzia)"
-
-file webview-ui/src/i18n/locales/pt-BR/settings.json
-
- 			"label": "Navegador",
- 			"description": "Realizar ações do navegador automaticamente sem exigir aprovação. Nota: Aplica-se apenas quando o modelo suporta uso do computador"
- 		},
-+		"retry": {
-+			"label": "Repetir",
-+			"description": "Repetir solicitações automaticamente quando o modelo falha em fornecer uma resposta ou quando um limite de taxa é atingido.",
-+			"delayLabel": "Atraso base entre repetições (segundos)",
-+			"retriesLabel": "Máximo de repetições automáticas para solicitações de API"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "Ativar aprovação automática de ferramentas MCP individuais na visualização de Servidores MCP (requer tanto esta configuração quanto a caixa de seleção \"Permitir sempre\" da ferramenta)"
-
-file webview-ui/src/i18n/locales/ru/settings.json
-
- 			"label": "Браузер",
- 			"description": "Автоматически выполнять действия в браузере без необходимости одобрения. Применяется только, если модель поддерживает использование компьютера"
- 		},
-+		"retry": {
-+			"label": "Повторить",
-+			"description": "Автоматически повторять запросы, если модель не дает ответа или достигнут лимит частоты запросов.",
-+			"delayLabel": "Базовая задержка между повторами (секунды)",
-+			"retriesLabel": "Максимальное количество автоповторов для API-запросов"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "Включить автоодобрение отдельных инструментов MCP в представлении MCP Servers (требуется включить как этот параметр, так и индивидуальный чекбокс инструмента \"Всегда разрешать\")"
-
-file webview-ui/src/i18n/locales/th/settings.json
-
- 		},
- 		"retry": {
- 			"label": "ลองใหม่",
--			"description": "ลองส่งคำขอ API ที่ล้มเหลวอีกครั้งโดยอัตโนมัติเมื่อเซิร์ฟเวอร์ส่งคืนการตอบสนองที่ผิดพลาด",
--			"delayLabel": "หน่วงเวลาก่อนลองส่งคำขออีกครั้ง"
-+			"description": "ลองส่งคำขอโดยอัตโนมัติเมื่อโมเดลไม่ตอบสนองหรือเมื่อถึงขีดจำกัดอัตรา",
-+			"delayLabel": "การหน่วงเวลาพื้นฐานระหว่างการลองใหม่ (วินาที)",
-+			"retriesLabel": "จำนวนการลองใหม่อัตโนมัติสูงสุดสำหรับคำขอ API"
- 		},
- 		"mcp": {
- 			"label": "MCP",
-
-file webview-ui/src/i18n/locales/tr/settings.json
-
- 			"label": "Tarayıcı",
- 			"description": "Onay gerektirmeden otomatik olarak tarayıcı eylemleri gerçekleştir. Not: Yalnızca model bilgisayar kullanımını desteklediğinde geçerlidir"
- 		},
-+		"retry": {
-+			"label": "Yeniden Dene",
-+			"description": "Model yanıt vermediğinde veya bir hız sınırına ulaşıldığında istekleri otomatik olarak yeniden deneyin.",
-+			"delayLabel": "Yeniden denemeler arasındaki temel gecikme (saniye)",
-+			"retriesLabel": "API istekleri için maksimum otomatik yeniden deneme sayısı"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "MCP Sunucuları görünümünde bireysel MCP araçlarının otomatik onayını etkinleştir (hem bu ayar hem de aracın \"Her zaman izin ver\" onay kutusu gerekir)"
-
-file webview-ui/src/i18n/locales/uk/settings.json
-
- 		},
- 		"retry": {
- 			"label": "Повторити",
--			"description": "Автоматично повторювати невдалі запити API, коли сервер повертає відповідь про помилку",
--			"delayLabel": "Затримка перед повторним запитом"
-+			"description": "Автоматично повторювати запити, коли модель не надає відповідь або коли досягнуто ліміту частоти запитів.",
-+			"delayLabel": "Базова затримка між спробами (секунди)",
-+			"retriesLabel": "Максимальна кількість автоматичних повторів для запитів API"
- 		},
- 		"mcp": {
- 			"label": "MCP",
-
-file webview-ui/src/i18n/locales/vi/settings.json
-
- 			"label": "Trình duyệt",
- 			"description": "Tự động thực hiện các hành động trình duyệt mà không cần phê duyệt. Lưu ý: Chỉ áp dụng khi mô hình hỗ trợ sử dụng máy tính"
- 		},
-+		"retry": {
-+			"label": "Thử lại",
-+			"description": "Tự động thử lại các yêu cầu khi mô hình không cung cấp phản hồi hoặc khi đạt đến giới hạn tốc độ.",
-+			"delayLabel": "Độ trễ cơ bản giữa các lần thử lại (giây)",
-+			"retriesLabel": "Số lần tự động thử lại tối đa cho các yêu cầu API"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "Bật tự động phê duyệt các công cụ MCP riêng lẻ trong chế độ xem Máy chủ MCP (yêu cầu cả cài đặt này và hộp kiểm \"Luôn cho phép\" của công cụ)"
-
-file webview-ui/src/i18n/locales/zh-CN/settings.json
-
- 			"label": "浏览器",
- 			"description": "自动执行浏览器操作而无需批准 — 注意：仅当模型支持计算机功能调用时适用"
- 		},
-+		"retry": {
-+			"label": "重试",
-+			"description": "当模型未能提供响应或达到速率限制时，自动重试请求。",
-+			"delayLabel": "重试之间的基础延迟（秒）",
-+			"retriesLabel": "API 请求的最大自动重试次数"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "允许自动调用MCP服务而无需批准"
-
-file webview-ui/src/i18n/locales/zh-TW/settings.json
-
- 			"label": "瀏覽器",
- 			"description": "無需核准即可自動執行瀏覽器動作。注意：僅適用於支援電腦操作的模型。"
- 		},
-+		"retry": {
-+			"label": "重試",
-+			"description": "當模型未能提供回應或達到速率限制時，自動重試請求。",
-+			"delayLabel": "重試之間的基礎延遲（秒）",
-+			"retriesLabel": "API 請求的最大自動重試次數"
-+		},
- 		"mcp": {
- 			"label": "MCP",
- 			"description": "啟用 MCP 伺服器檢視中個別 MCP 工具的自動核准（需同時啟用此設定與該工具的「始終允許」核取方塊）"
