@@ -57,8 +57,8 @@ label export const providerNames = [
  	"minimax",
 +	"gemini-cli",
  	"virtual-quota-fallback",
-
- 	"inception",
+ 	// Note: apertis, synthetic, inception are in dynamicProviders, no need to duplicate here
+ 	"synthetic",
 
 label const geminiSchema = apiModelIdProviderModelSchema.extend({
 
@@ -80,9 +80,9 @@ label export const providerSettingsSchemaDiscriminated = z.discriminatedUnion("a
  	xaiSchema.merge(z.object({ apiProvider: z.literal("xai") })),
  	// kilocode_change start
 +	geminiCliSchema.merge(z.object({ apiProvider: z.literal("gemini-cli") })),
-
+ 	apertisSchema.merge(z.object({ apiProvider: z.literal("apertis") })),
+ 	kilocodeSchema.merge(z.object({ apiProvider: z.literal("kilocode") })),
  	virtualQuotaFallbackSchema.merge(z.object({ apiProvider: z.literal("virtual-quota-fallback") })),
- 	syntheticSchema.merge(z.object({ apiProvider: z.literal("synthetic") })),
 
 label export const providerSettingsSchema = z.object({
 
@@ -90,9 +90,9 @@ label export const providerSettingsSchema = z.object({
  	...geminiSchema.shape,
  	// kilocode_change start
 +	...geminiCliSchema.shape,
-
+ 	...apertisSchema.shape,
+ 	...kilocodeSchema.shape,
  	...virtualQuotaFallbackSchema.shape,
- 	...syntheticSchema.shape,
 
 label export const modelIdKeysByProvider: Record<TypicalProvider, ModelIdKey> = {
 
@@ -121,6 +121,20 @@ file packages/types/src/providers/gemini-cli.ts
 +export type GeminiCliModelId = keyof typeof geminiCliModels;
 +export const geminiCliDefaultModelId: GeminiCliModelId = 'gemini-2.5-flash';
 +export const geminiCliModels = {
++  'gemini-3.1-pro-preview': {
++    maxTokens: 65_536,
++    contextWindow: 1_048_576,
++    supportsImages: true,
++    supportsPromptCache: true,
++    supportsNativeTools: true,
++    defaultToolProtocol: 'native',
++    supportsReasoningEffort: ['low', 'medium', 'high'],
++    reasoningEffort: 'low',
++    supportsTemperature: true,
++    defaultTemperature: 1,
++    inputPrice: 0,
++    outputPrice: 0,
++  },
 +  'gemini-3-pro-preview': {
 +    maxTokens: 65_536,
 +    contextWindow: 1_048_576,
@@ -134,7 +148,6 @@ file packages/types/src/providers/gemini-cli.ts
 +    defaultTemperature: 1,
 +    inputPrice: 0,
 +    outputPrice: 0,
-+    maxThinkingTokens: 65_536,
 +  },
 +  'gemini-3-flash-preview': {
 +    maxTokens: 65_536,
@@ -149,7 +162,6 @@ file packages/types/src/providers/gemini-cli.ts
 +    defaultTemperature: 1,
 +    inputPrice: 0,
 +    outputPrice: 0,
-+    maxThinkingTokens: 65_536,
 +  },
 +  'gemini-2.5-pro': {
 +    maxTokens: 64_000,
@@ -160,9 +172,9 @@ file packages/types/src/providers/gemini-cli.ts
 +    defaultToolProtocol: 'native',
 +    supportsReasoningBudget: true,
 +    requiredReasoningBudget: true,
++    maxThinkingTokens: 32_768,
 +    inputPrice: 0,
 +    outputPrice: 0,
-+    maxThinkingTokens: 32_768,
 +  },
 +  'gemini-2.5-flash': {
 +    maxTokens: 64_000,
@@ -173,9 +185,9 @@ file packages/types/src/providers/gemini-cli.ts
 +    defaultToolProtocol: 'native',
 +    supportsReasoningBudget: true,
 +    requiredReasoningBudget: true,
++    maxThinkingTokens: 32_768,
 +    inputPrice: 0,
 +    outputPrice: 0,
-+    maxThinkingTokens: 32_768,
 +  },
 +  'gemini-2.5-flash-lite': {
 +    maxTokens: 64_000,
@@ -186,9 +198,9 @@ file packages/types/src/providers/gemini-cli.ts
 +    defaultToolProtocol: 'native',
 +    supportsReasoningBudget: true,
 +    requiredReasoningBudget: true,
++    maxThinkingTokens: 32_768,
 +    inputPrice: 0,
 +    outputPrice: 0,
-+    maxThinkingTokens: 32_768,
 +  },
 +} as const satisfies Record<string, ModelInfo>;
 
@@ -332,11 +344,14 @@ file src/api/providers/gemini-cli.ts
 +      project: this.projectId,
 +      request: {
 +        systemInstruction: {
++          role: 'user',
 +          parts: [{ text: systemInstruction }],
 +        },
 +        contents,
 +        generationConfig: {
 +          temperature: temperatureConfig,
++          topP: 0.95,
++          topK: 64,
 +          maxOutputTokens,
 +          ...(thinkingConfig ? { thinkingConfig } : {}),
 +        },
@@ -382,7 +397,7 @@ file src/api/providers/gemini-cli.ts
 +    }
 +
 +    const controller = new AbortController();
-+    const response = await this.authClient.request({
++    const result = await this.authClient.request({
 +      url: this.getApiUrl('streamGenerateContent'),
 +      method: 'POST',
 +      params: { alt: 'sse' },
@@ -396,13 +411,13 @@ file src/api/providers/gemini-cli.ts
 +    let toolCallCounter = 0;
 +
 +    try {
-+      const stream = this.parseSSEStream(response.data as NodeJS.ReadableStream);
++      const stream = this.parseSSEStream(result.data as NodeJS.ReadableStream);
 +      for await (const jsonData of stream) {
-+        const responseData = jsonData.response || jsonData;
-+        const candidate = responseData.candidates?.[0];
++        const response = jsonData.response || jsonData;
++        const candidate = response.candidates?.[0];
 +
-+        if (responseData.responseId) {
-+          this.lastResponseId = responseData.responseId;
++        if (response.responseId) {
++          this.lastResponseId = response.responseId;
 +        }
 +
 +        if (candidate?.content?.parts) {
@@ -442,7 +457,7 @@ file src/api/providers/gemini-cli.ts
 +            }
 +          }
 +        }
-+        if (responseData.usageMetadata) lastUsage = responseData.usageMetadata;
++        if (response.usageMetadata) lastUsage = response.usageMetadata;
 +        if (candidate?.finishReason) break;
 +      }
 +    } finally {
@@ -481,16 +496,10 @@ file src/api/providers/gemini-cli.ts
 +      },
 +    };
 +
-+    const response = await this.authClient.request({
-+      url: this.getApiUrl('generateContent'),
-+      method: 'POST',
-+      headers: { 'Content-Type': 'application/json' },
-+      data: requestBody,
-+    });
++    const result = await this.callEndpoint('generateContent', requestBody);
 +
-+    const responseData = (response.data as any).response || response.data;
 +    return (
-+      responseData.candidates?.[0]?.content?.parts
++      result.response.candidates?.[0]?.content?.parts
 +        ?.filter((p: any) => p.text && !p.thought)
 +        ?.map((p: any) => p.text)
 +        ?.join('') || ''
@@ -559,8 +568,9 @@ file src/api/providers/gemini-cli.ts
 +      const envPath = join(dirname(this.credPath), '.env');
 +      const content = await readFile(envPath, 'utf-8');
 +      const match = content.match(/GOOGLE_CLOUD_PROJECT=["']?([^"'\r\n\s]+)["']?/);
-+      if (match) {
-+        this.projectId = match[1].trim();
++      const projectId = match ? match[1].trim() : '';
++      if (projectId) {
++        this.projectId = projectId;
 +        return;
 +      }
 +    } catch {}
@@ -569,24 +579,40 @@ file src/api/providers/gemini-cli.ts
 +      ideType: 'IDE_UNSPECIFIED',
 +      platform: 'PLATFORM_UNSPECIFIED',
 +      pluginType: 'GEMINI',
-+      duetProject: '',
 +    };
 +
 +    try {
-+      const load = await this.callEndpoint('loadCodeAssist', { cloudaicompanionProject: '', metadata });
++      const load = await this.callEndpoint('loadCodeAssist', {
++        cloudaicompanionProject: this.projectId,
++        metadata: { ...metadata, duetProject: this.projectId },
++      });
 +      if (load.cloudaicompanionProject) {
 +        this.projectId = load.cloudaicompanionProject;
 +        return;
 +      }
 +
 +      const tierId = load.allowedTiers?.find((t: any) => t.isDefault)?.id || 'free-tier';
-+      let onboard = await this.callEndpoint('onboardUser', { tierId, cloudaicompanionProject: '', metadata });
++      let onboard = await this.callEndpoint('onboardUser', {
++        tierId,
++        cloudaicompanionProject: undefined,
++        metadata,
++      });
 +
-+      for (let i = 0; i < 30 && !onboard.done; i++) {
-+        await new Promise((r) => setTimeout(r, 2000));
-+        onboard = await this.callEndpoint('onboardUser', { tierId, cloudaicompanionProject: '', metadata });
++      if (!onboard.done && onboard.name) {
++        const operationName = onboard.name;
++        while (!onboard.done) {
++          await new Promise((f) => setTimeout(f, 5000));
++          onboard = (
++            await this.authClient.request({
++              url: `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}/${operationName}`,
++              method: 'GET',
++              headers: { 'Content-Type': 'application/json' },
++            })
++          ).data;
++        }
 +      }
-+      this.projectId = onboard.response?.cloudaicompanionProject?.id || '';
++
++      this.projectId = onboard.response?.cloudaicompanionProject?.id;
 +    } catch (error: any) {
 +      throw new Error(`Gemini CLI discoverProjectId failed: ${error.response?.data || error.message}`);
 +    }
@@ -594,13 +620,13 @@ file src/api/providers/gemini-cli.ts
 +
 +  private async callEndpoint(method: string, data: any, retry = true): Promise<any> {
 +    try {
-+      const res = await this.authClient.request({
++      const result = await this.authClient.request({
 +        url: this.getApiUrl(method),
 +        method: 'POST',
 +        headers: { 'Content-Type': 'application/json' },
 +        data,
 +      });
-+      return res.data;
++      return result.data;
 +    } catch (error: any) {
 +      if (error.response?.status === 401 && retry) {
 +        await this.ensureAuthenticated();
@@ -707,9 +733,9 @@ label import {
 
 label const ApiOptions = ({
 
- 				lmstudio: { field: "lmStudioModelId" },
  				// kilocode_change start
-
+ 				apertis: { field: "apertisModelId", default: apertisDefaultModelId },
+ 				kilocode: { field: "kilocodeModel", default: kilocodeDefaultModel },
 +				"gemini-cli": { field: "apiModelId", default: geminiCliDefaultModelId },
  				synthetic: { field: "apiModelId", default: syntheticDefaultModelId },
  				ovhcloud: { field: "ovhCloudAiEndpointsModelId", default: ovhCloudAiEndpointsDefaultModelId },
