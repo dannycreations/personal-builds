@@ -24,7 +24,7 @@ jobs:
       - name: Checkout Target Repository
         uses: ./.github/actions/check-changes
         with:
-          target-repo: peternmuller/revanced-morphe-builder
+          target-repo: j-hc/revanced-magisk-module
           target-branch: main
           target-dir: ${{ env.WORK_DIR }}
 
