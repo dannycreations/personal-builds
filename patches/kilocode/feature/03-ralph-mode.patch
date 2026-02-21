@@ -278,9 +278,9 @@ label export class AttemptCompletionTool extends BaseTool<"attempt_completion"> 
 +				return
 +			}
 +
- 			const { response, text, images } = await task.ask("completion_result", "", false)
- 
- 			if (response === "yesButtonClicked") {
+ 			// kilocode_change start - Pass completion suggestions based on task mode
+ 			const completionSuggestions = getCompletionSuggestions(task)
+ 			const completionAskText = completionSuggestions ? JSON.stringify({ suggest: completionSuggestions }) : ""
 
 file src/core/webview/ClineProvider.ts
 label export class ClineProvider
