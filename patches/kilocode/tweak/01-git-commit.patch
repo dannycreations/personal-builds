@@ -1,3 +1,165 @@
+file src/services/commit-message/CommitMessageGenerator.ts
+label export class CommitMessageGenerator {
+
+ 	}
+ 
+ 	async generateMessage(params: GenerateMessageParams): Promise<string> {
+-		const { gitContext, onProgress } = params
++		const { gitContext, additionalInstructions, onProgress } = params
+ 
+ 		try {
+ 			onProgress?.({
+ 				message: "Generating commit message...",
+ 				percentage: 75,
+ 			})
+ 
+-			const generatedMessage = await this.callAIForCommitMessage(gitContext, onProgress)
++			const generatedMessage = await this.callAIForCommitMessage(gitContext, additionalInstructions, onProgress)
+ 
+ 			this.previousGitContext = gitContext
+ 			this.previousCommitMessage = generatedMessage
+
+label export class CommitMessageGenerator {
+
+ 	}
+ 
+ 	async buildPrompt(gitContext: string, options: PromptOptions): Promise<string> {
+-		const { customSupportPrompts = {}, previousContext, previousMessage } = options
++		const { customSupportPrompts = {}, previousContext, previousMessage, additionalInstructions } = options
+ 
+ 		const customInstructions = await addCustomInstructions("", "", "", "commit", {
+ 			language: "en",
+ 			localRulesToggleState: undefined,
+ 			globalRulesToggleState: undefined,
+ 		})
+ 
+ 		const shouldGenerateDifferentMessage =
+ 			(previousContext === gitContext || this.previousGitContext === gitContext) &&
+ 			(previousMessage !== null || this.previousCommitMessage !== null)
+ 
+ 		const targetPreviousMessage = previousMessage || this.previousCommitMessage
+ 
++		let instructionContext = ""
++		if (additionalInstructions && additionalInstructions.trim() !== "") {
++			const isPreviousMessage = additionalInstructions.trim() === targetPreviousMessage?.trim()
++			if (!isPreviousMessage) instructionContext = additionalInstructions
++		}
++
+ 		if (shouldGenerateDifferentMessage && targetPreviousMessage) {
+ 			const differentMessagePrefix = `# CRITICAL INSTRUCTION: GENERATE A COMPLETELY DIFFERENT COMMIT MESSAGE
+ The user has requested a new commit message for the same changes.
+
+label FINAL REMINDER: Your message MUST be COMPLETELY DIFFERENT from the previous mess
+
+ 				{
+ 					gitContext,
+ 					customInstructions: customInstructions || "",
++					additionalInstructions: instructionContext,
+ 				},
+ 				{
+ 					...customSupportPrompts,
+ 					COMMIT_MESSAGE: modifiedTemplate,
+ 				},
+ 			)
+ 		} else {
+ 			return supportPrompt.create(
+ 				"COMMIT_MESSAGE",
+ 				{
+ 					gitContext,
+ 					customInstructions: customInstructions || "",
++					additionalInstructions: instructionContext,
+ 				},
+ 				customSupportPrompts,
+ 			)
+ 		}
+ 	}
+ 
+ 	private async callAIForCommitMessage(
+ 		gitContextString: string,
++		additionalInstructions?: string,
+ 		onProgress?: (progress: ProgressUpdate) => void,
+ 	): Promise<string> {
+ 		const contextProxy = ContextProxy.instance
+
+label FINAL REMINDER: Your message MUST be COMPLETELY DIFFERENT from the previous mess
+
+ 			Object.entries(customSupportPrompts).filter(([_, value]) => value !== undefined),
+ 		) as Record<string, string>
+ 
+-		const prompt = await this.buildPrompt(gitContextString, { customSupportPrompts: filteredPrompts })
++		const prompt = await this.buildPrompt(gitContextString, {
++			customSupportPrompts: filteredPrompts,
++			additionalInstructions,
++		})
+ 
+ 		onProgress?.({
+ 			message: "Calling AI service...",
+
+file src/services/commit-message/CommitMessageOrchestrator.ts
+label export class CommitMessageOrchestrator {
+
+ 
+ 			integration.reportProgress?.(70, t("kilocode:commitMessage.generating"))
+ 
++			const additionalInstructions = await integration.getCommitInputValue?.()
++
+ 			const message = await messageGenerator.generateMessage({
+ 				workspacePath: request.workspacePath,
+ 				selectedFiles: resolution.files,
+ 				gitContext,
++				additionalInstructions,
+ 				onProgress: (update) => {
+ 					if (update.percentage !== undefined) {
+ 						// Scale AI generation progress to fit within 70-95% range
+
+file src/services/commit-message/adapters/ICommitMessageIntegration.ts
+label export interface ICommitMessageIntegration {
+
+ 	 */
+ 	showMessage?(message: string, type: "info" | "error" | "warning"): Promise<void>
+ 
++	/**
++	 * Get the current value from the IDE's commit input box.
++	 */
++	getCommitInputValue(): Promise<string | undefined>
++
+ 	/**
+ 	 * Handle the final result (e.g., set commit message in input box)
+ 	 */
+
+file src/services/commit-message/adapters/VSCodeCommitMessageAdapter.ts
+label export class VSCodeCommitMessageAdapter implements ICommitMessageAdapter {
+
+ 							await method(message)
+ 						},
+ 
++						getCommitInputValue: async () => {
++							return this.targetRepository?.inputBox.value
++						},
++
+ 						handleResult: async (result: CommitMessageResult) => {
+ 							if (result.message && this.targetRepository) {
+ 								this.targetRepository.inputBox.value = result.message
+
+file src/services/commit-message/types/core.ts
+label export interface GenerateMessageParams {
+
+ 	workspacePath: string
+ 	selectedFiles: string[]
+ 	gitContext: string
++	additionalInstructions?: string
+ 	onProgress?: (progress: ProgressUpdate) => void
+ }
+ 
+ export interface PromptOptions {
+ 	customSupportPrompts?: Record<string, string>
+ 	previousContext?: string
+ 	previousMessage?: string
++	additionalInstructions?: string
+ }
+ 
+ export interface ProgressUpdate {
+
 file src/shared/support-prompt.ts
 label Requirements:
 
@@ -75,19 +237,23 @@ label Requirements:
 -For significant changes, include a detailed body explaining the changes.
 -
 -Return ONLY the commit message in the conventional format, nothing else.`,
-+		template: `Perform a mandatory and thorough audit of the entire \`git diff\` to synthesize a single, fully compliant Conventional Commit 1.0.0 message. If BREAKING CHANGES are detected, you shall add a \`!\` character immediately after the type or scope (e.g., \`type(scope)!:\`) to mark the breaking change in the header. The output should be extremely concise, unified, and enclosed in a code block, following the logical structure defined below without deviation.
-+
-+\`\`\`
-+feat(core)!: add multi-factor authentication support
-+
-+- Remove reading and parsing of existing \`manifest.json\`.
-+- Update cookbook to use \`upsert\` method for recipe management.
-+- Adjust \`prepare\` script to run only \`husky\` without building.
-+
-+BREAKING CHANGE: remove the \`login\` endpoint, migrate to OAuth2.
-+\`\`\`
-+
-+\${gitContext}`,
- 	},
+-	},
++			template: `Perform a mandatory and thorough audit of the entire \`git diff\` to synthesize a single, fully compliant Conventional Commit 1.0.0 message. If BREAKING CHANGES are detected, you shall add a \`!\` character immediately after the type or scope (e.g., \`type(scope)!:\`) to mark the breaking change in the header. The output should be extremely concise, unified, and enclosed in a code block, following the logical structure defined below without deviation.
++	
++	\`\`\`
++	feat(core)!: add multi-factor authentication support
++	
++	- Remove reading and parsing of existing \`manifest.json\`.
++	- Update cookbook to use \`upsert\` method for recipe management.
++	- Adjust \`prepare\` script to run only \`husky\` without building.
++	
++	BREAKING CHANGE: remove the \`login\` endpoint, migrate to OAuth2.
++	\`\`\`
++	
++	Additional mandatory instructions: "\${additionalInstructions}".
++	
++	\${gitContext}`,
++		},
  	// kilocode_change end
  } as const
+ 
