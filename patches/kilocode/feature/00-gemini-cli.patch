@@ -798,7 +798,7 @@ label export const MODELS_BY_PROVIDER: Partial<Record<ProviderName, Record<strin
 label export const PROVIDERS = [
 
  	// kilocode_change start
- 	{ value: "zenmux", label: "ZenMux" },
+
  	{ value: "inception", label: "Inception", proxy: false },
 +	{ value: "gemini-cli", label: "Gemini CLI", proxy: false },
  	{ value: "virtual-quota-fallback", label: "Virtual Quota Fallback", proxy: false },

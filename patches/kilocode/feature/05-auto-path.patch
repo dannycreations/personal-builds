@@ -1,0 +1,720 @@
+file packages/types/src/global-settings.ts
+label export const globalSettingsSchema = z.object({
+
+ 	alwaysAllowWriteOutsideWorkspace: z.boolean().optional(),
+ 	alwaysAllowWriteProtected: z.boolean().optional(),
+ 	alwaysAllowDelete: z.boolean().optional(), // kilocode_change
++	allowedReadPaths: z.array(z.string()).optional(), // kilocode_change
++	deniedReadPaths: z.array(z.string()).optional(), // kilocode_change
++	allowedWritePaths: z.array(z.string()).optional(), // kilocode_change
++	deniedWritePaths: z.array(z.string()).optional(), // kilocode_change
+ 	writeDelayMs: z.number().min(0).optional(),
+ 	alwaysAllowBrowser: z.boolean().optional(),
+
+label export const EVALS_SETTINGS: RooCodeSettings = {
+
+ 	alwaysAllowWriteOutsideWorkspace: false,
+ 	alwaysAllowWriteProtected: false,
+ 	alwaysAllowDelete: true, // kilocode_change
++	allowedReadPaths: [], // kilocode_change
++	deniedReadPaths: [], // kilocode_change
++	allowedWritePaths: [], // kilocode_change
++	deniedWritePaths: [], // kilocode_change
+ 	writeDelayMs: 1000,
+ 	alwaysAllowBrowser: true,
+
+file packages/types/src/vscode-extension-host.ts
+label export type ExtensionState = Pick<
+
+ 	| "followupAutoApproveTimeoutMs"
+ 	| "allowedCommands"
+ 	| "deniedCommands"
++	| "allowedReadPaths" // kilocode_change
++	| "deniedReadPaths" // kilocode_change
++	| "allowedWritePaths" // kilocode_change
++	| "deniedWritePaths" // kilocode_change
+ 	| "allowedMaxRequests"
+ 	| "allowedMaxCost"
+ 	| "browserToolEnabled"
+
+file src/core/auto-approval/index.ts
+label import { ClineAskResponse } from "../../shared/WebviewMessage"
+
+ import { isWriteToolAction, isReadOnlyToolAction } from "./tools"
+ import { isMcpToolAlwaysAllowed } from "./mcp"
+ import { getCommandDecision } from "./commands"
++import { getPathDecision } from "./paths"
+ 
+ // We have 11 different actions that can be auto-approved. // kilocode_change
+ export type AutoApprovalState =
+
+label export type AutoApprovalStateOptions =
+
+ 	| "mcpServers" // For `alwaysAllowMcp`.
+ 	| "allowedCommands" // For `alwaysAllowExecute`.
+ 	| "deniedCommands"
++	| "allowedReadPaths" // kilocode_change
++	| "deniedReadPaths" // kilocode_change
++	| "allowedWritePaths" // kilocode_change
++	| "deniedWritePaths" // kilocode_change
+ 
+ export type CheckAutoApprovalResult =
+ 	| { decision: "approve" }
+
+label export async function checkAutoApproval({
+
+ 		const isOutsideWorkspace = !!tool.isOutsideWorkspace
+ 
+ 		if (isReadOnlyToolAction(tool)) {
+-			return state.alwaysAllowReadOnly === true &&
+-				(!isOutsideWorkspace || state.alwaysAllowReadOnlyOutsideWorkspace === true)
+-				? { decision: "approve" }
+-				: { decision: "ask" }
++			if (state.alwaysAllowReadOnly === true) {
++				if (!isOutsideWorkspace || state.alwaysAllowReadOnlyOutsideWorkspace === true) {
++					return { decision: "approve" }
++				}
++
++				if (tool.path) {
++					const decision = getPathDecision(
++						tool.path,
++						process.cwd(), // This will be overridden by the tool's absolute path if provided
++						state.allowedReadPaths || [],
++						state.deniedReadPaths || [],
++					)
++					if (decision === "auto_approve") {
++						return { decision: "approve" }
++					} else if (decision === "auto_deny") {
++						return { decision: "deny" }
++					}
++				}
++			}
++			return { decision: "ask" }
+ 		}
+ 
+ 		if (isWriteToolAction(tool)) {
+-			return state.alwaysAllowWrite === true &&
+-				(!isOutsideWorkspace || state.alwaysAllowWriteOutsideWorkspace === true) &&
+-				(!isProtected || state.alwaysAllowWriteProtected === true)
+-				? { decision: "approve" }
+-				: { decision: "ask" }
++			if (state.alwaysAllowWrite === true && (!isProtected || state.alwaysAllowWriteProtected === true)) {
++				if (!isOutsideWorkspace || state.alwaysAllowWriteOutsideWorkspace === true) {
++					return { decision: "approve" }
++				}
++
++				if (tool.path) {
++					const decision = getPathDecision(
++						tool.path,
++						process.cwd(),
++						state.allowedWritePaths || [],
++						state.deniedWritePaths || [],
++					)
++					if (decision === "auto_approve") {
++						return { decision: "approve" }
++					} else if (decision === "auto_deny") {
++						return { decision: "deny" }
++					}
++				}
++			}
++			return { decision: "ask" }
+ 		}
+ 
+ 		// kilocode_change start
+
+file src/core/auto-approval/paths.ts
+
++import * as path from 'path';
++
++export type PathDecision = 'auto_approve' | 'auto_deny' | 'ask_user';
++
++function normalizePath(filePath: string): string {
++  return filePath.replace(/\\/g, '/');
++}
++
++function globToRegExp(pattern: string): RegExp {
++  let regexStr = '^';
++
++  for (let i = 0; i < pattern.length; i++) {
++    const c = pattern[i];
++
++    // 1. Handle /**/ (directory chain)
++    if (c === '/' && pattern.substr(i, 4) === '/**/') {
++      regexStr += '(?:/|/.+/)';
++      i += 3;
++      continue;
++    }
++
++    // 2. Handle **/ at the start of the pattern
++    if (i === 0 && pattern.substr(0, 3) === '**/') {
++      regexStr += '(?:.+/)?';
++      i += 2;
++      continue;
++    }
++
++    // 3. Handle /** at the end of the pattern
++    if (c === '/' && i === pattern.length - 3 && pattern.substr(i, 3) === '/**') {
++      regexStr += '(?:/.*)?';
++      i += 2;
++      continue;
++    }
++
++    // 4. Handle ** anywhere else (matches anything)
++    if (c === '*' && pattern[i + 1] === '*') {
++      regexStr += '.*';
++      i += 1;
++      continue;
++    }
++
++    // 5. Handle * (matches anything EXCEPT a directory separator)
++    if (c === '*') {
++      regexStr += '[^/]*';
++      continue;
++    }
++
++    // 6. Handle ? (matches a single character EXCEPT a directory separator)
++    if (c === '?') {
++      regexStr += '[^/]';
++      continue;
++    }
++
++    // 7. Escape standard Regex control characters
++    if (/[.+^${}()|[\]\\]/.test(c)) {
++      regexStr += '\\' + c;
++      continue;
++    }
++
++    // 8. Standard characters
++    regexStr += c;
++  }
++
++  regexStr += '$';
++  return new RegExp(regexStr);
++}
++
++function findMostSpecificMatch(filePath: string, patterns: string[], cwd: string): string | null {
++  if (!filePath || !patterns?.length) {
++    return null;
++  }
++
++  const normalizedPath = normalizePath(filePath);
++  const relativePath = path.relative(cwd, filePath);
++  const normalizedRelativePath = normalizePath(relativePath);
++
++  let bestMatch: string | null = null;
++
++  for (const pattern of patterns) {
++    let isMatched = false;
++    const normalizedPattern = normalizePath(pattern);
++
++    if (path.isAbsolute(normalizedPattern)) {
++      // Exact or directory prefix match for hardcoded absolute paths
++      if (normalizedPath === normalizedPattern || normalizedPath.startsWith(normalizedPattern + '/')) {
++        isMatched = true;
++      }
++    } else {
++      // Use native RegExp matching for globs
++      const regex = globToRegExp(normalizedPattern);
++
++      // Check 1: Does it match the workspace-relative path? (ensure it's not escaping the workspace with "..")
++      if (!normalizedRelativePath.startsWith('..') && regex.test(normalizedRelativePath)) {
++        isMatched = true;
++      }
++
++      // Check 2: If the glob was meant for an absolute system path, check against the absolute path.
++      if (!isMatched && regex.test(normalizedPath)) {
++        isMatched = true;
++      }
++    }
++
++    if (isMatched) {
++      if (!bestMatch || pattern.length > bestMatch.length) {
++        bestMatch = pattern;
++      }
++    }
++  }
++
++  return bestMatch;
++}
++
++export function getPathDecision(filePath: string, cwd: string, allowedPaths: string[], deniedPaths?: string[]): PathDecision {
++  if (!filePath) {
++    return 'ask_user';
++  }
++
++  const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
++  const normalizedPath = normalizePath(absolutePath);
++  const normalizedCwd = normalizePath(cwd);
++
++  const mostSpecificAllowed = findMostSpecificMatch(normalizedPath, allowedPaths || [], normalizedCwd);
++  const mostSpecificDenied = findMostSpecificMatch(normalizedPath, deniedPaths || [], normalizedCwd);
++
++  if (mostSpecificAllowed && !mostSpecificDenied) {
++    return 'auto_approve';
++  }
++
++  if (!mostSpecificAllowed && mostSpecificDenied) {
++    return 'auto_deny';
++  }
++
++  if (mostSpecificAllowed && mostSpecificDenied) {
++    return mostSpecificAllowed.length > mostSpecificDenied.length ? 'auto_approve' : 'auto_deny';
++  }
++
++  return 'ask_user';
++}
+
+file src/core/webview/ClineProvider.ts
+label export class ClineProvider
+
+ 			yoloGatekeeperApiConfigId, // kilocode_change: AI gatekeeper for YOLO mode
+ 			selectedMicrophoneDevice, // kilocode_change: Selected microphone device for STT
+ 			isBrowserSessionActive,
++			allowedReadPaths, // kilocode_change
++			deniedReadPaths, // kilocode_change
++			allowedWritePaths, // kilocode_change
++			deniedWritePaths, // kilocode_change
+
+ 
+ 		// kilocode_change start: Get active model for virtual quota fallback UI display
+
+label export class ClineProvider
+
+ 			alwaysAllowSubtasks: alwaysAllowSubtasks ?? false,
+
+ 			yoloMode: yoloMode ?? false, // kilocode_change
++			allowedReadPaths: allowedReadPaths ?? [], // kilocode_change
++			deniedReadPaths: deniedReadPaths ?? [], // kilocode_change
++			allowedWritePaths: allowedWritePaths ?? [], // kilocode_change
++			deniedWritePaths: deniedWritePaths ?? [], // kilocode_change
+ 			allowedMaxRequests,
+ 			allowedMaxCost,
+ 			autoCondenseContext: autoCondenseContext ?? true,
+
+label export class ClineProvider
+
+ 			alwaysAllowFollowupQuestions: stateValues.alwaysAllowFollowupQuestions ?? false,
+
+ 			yoloMode: stateValues.yoloMode ?? false, // kilocode_change
++			allowedReadPaths: stateValues.allowedReadPaths ?? [], // kilocode_change
++			deniedReadPaths: stateValues.deniedReadPaths ?? [], // kilocode_change
++			allowedWritePaths: stateValues.allowedWritePaths ?? [], // kilocode_change
++			deniedWritePaths: stateValues.deniedWritePaths ?? [], // kilocode_change
+ 			followupAutoApproveTimeoutMs: stateValues.followupAutoApproveTimeoutMs ?? 60000,
+ 			diagnosticsEnabled: stateValues.diagnosticsEnabled ?? true,
+ 			allowedMaxRequests: stateValues.allowedMaxRequests,
+
+file webview-ui/src/App.tsx
+label const App = () => {
+
+ 		apiConfiguration, // kilocode_change
+ 		hasCompletedOnboarding, // kilocode_change: Track onboarding state
+ 		taskHistoryFullLength, // kilocode_change: Used to detect existing users
++		allowedReadPaths,
++		deniedReadPaths,
++		allowedWritePaths,
++		deniedWritePaths,
+ 	} = useExtensionState()
+ 
+ 	// Create a persistent state manager
+
+label const App = () => {
+
+ 					onDone={() => switchTab("chat")}
+ 					targetSection={currentSection}
+ 					editingProfile={settingsEditingProfile}
++					allowedReadPaths={allowedReadPaths}
++					deniedReadPaths={deniedReadPaths}
++					allowedWritePaths={allowedWritePaths}
++					deniedWritePaths={deniedWritePaths}
+ 				/>
+ 			)}
+ 			{/* kilocode_change: add profileview and authview */}
+
+file webview-ui/src/components/settings/AutoApproveSettings.tsx
+label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
+
+ 	yoloMode?: boolean // kilocode_change
+ 	yoloGatekeeperApiConfigId?: string // kilocode_change: AI gatekeeper for YOLO mode
+ 	deniedCommands?: string[]
++	allowedReadPaths?: string[] // kilocode_change
++	deniedReadPaths?: string[] // kilocode_change
++	allowedWritePaths?: string[] // kilocode_change
++	deniedWritePaths?: string[] // kilocode_change
+ 	setCachedStateField: SetCachedStateField<
+ 		| "alwaysAllowReadOnly"
+ 		| "alwaysAllowReadOnlyOutsideWorkspace"
+
+label type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
+
+ 		| "yoloMode" // kilocode_change
+ 		| "yoloGatekeeperApiConfigId" // kilocode_change: AI gatekeeper for YOLO mode
+ 		| "deniedCommands"
++		| "allowedReadPaths" // kilocode_change
++		| "deniedReadPaths" // kilocode_change
++		| "allowedWritePaths" // kilocode_change
++		| "deniedWritePaths" // kilocode_change
+ 	>
+ }
+ 
+
+label export const AutoApproveSettings = ({
+
+ 	yoloMode, // kilocode_change
+ 	yoloGatekeeperApiConfigId, // kilocode_change: AI gatekeeper for YOLO mode
+ 	deniedCommands,
++	allowedReadPaths, // kilocode_change
++	deniedReadPaths, // kilocode_change
++	allowedWritePaths, // kilocode_change
++	deniedWritePaths, // kilocode_change
+ 	setCachedStateField,
+ 	...props
+ }: AutoApproveSettingsProps) => {
+ 	const { t } = useAppTranslation()
+ 	const [commandInput, setCommandInput] = useState("")
+ 	const [deniedCommandInput, setDeniedCommandInput] = useState("")
++
++	const [readPathInput, setReadPathInput] = useState("")
++	const [deniedReadPathInput, setDeniedReadPathInput] = useState("")
++	const [writePathInput, setWritePathInput] = useState("")
++	const [deniedWritePathInput, setDeniedWritePathInput] = useState("")
+
+ 
+ 	const toggles = useAutoApprovalToggles()
+
+label export const AutoApproveSettings = ({
+
+ 		}
+ 	}
+ 
++	const handleAddPath = (
++		input: string,
++		setInput: (v: string) => void,
++		currentPaths: string[] | undefined,
++		field: "allowedReadPaths" | "deniedReadPaths" | "allowedWritePaths" | "deniedWritePaths",
++	) => {
++		const paths = currentPaths ?? []
++		if (input && !paths.includes(input)) {
++			const newPaths = [...paths, input]
++			setCachedStateField(field, newPaths)
++			setInput("")
++			vscode.postMessage({ type: "updateSettings", updatedSettings: { [field]: newPaths } })
++		}
++	}
++
++	const handleRemovePath = (
++		index: number,
++		currentPaths: string[] | undefined,
++		field: "allowedReadPaths" | "deniedReadPaths" | "allowedWritePaths" | "deniedWritePaths",
++	) => {
++		const newPaths = (currentPaths ?? []).filter((_, i) => i !== index)
++		setCachedStateField(field, newPaths)
++		vscode.postMessage({ type: "updateSettings", updatedSettings: { [field]: newPaths } })
++	}
++
+ 	return (
+ 		<div {...props}>
+ 			<SectionHeader>{t("settings:sections.autoApprove")}</SectionHeader>
+
+label export const AutoApproveSettings = ({
+
+ 								{t("settings:autoApprove.readOnly.outsideWorkspace.description")}
+ 							</div>
+ 						</SearchableSetting>
++
++						<div className="space-y-2 mt-2">
++							<div className="flex gap-2">
++								<Input
++									value={readPathInput}
++									onChange={(e: any) => setReadPathInput(e.target.value)}
++									onKeyDown={(e: any) => {
++										if (e.key === "Enter") {
++											e.preventDefault()
++											handleAddPath(readPathInput, setReadPathInput, allowedReadPaths, "allowedReadPaths")
++										}
++									}}
++									placeholder="Allowed path glob"
++									className="grow h-8"
++								/>
++								<Button
++									className="h-8"
++									onClick={() =>
++										handleAddPath(readPathInput, setReadPathInput, allowedReadPaths, "allowedReadPaths")
++									}>
++									Add
++								</Button>
++							</div>
++							<div className="flex flex-wrap gap-2 mt-1">
++								{(allowedReadPaths ?? []).map((path, index) => (
++									<Button
++										key={index}
++										variant="secondary"
++										size="sm"
++										className="h-7 px-2"
++										onClick={() => handleRemovePath(index, allowedReadPaths, "allowedReadPaths")}>
++										<div className="flex flex-row items-center gap-1">
++											<div className="max-w-[200px] truncate">{path}</div>
++											<X size={12} />
++										</div>
++									</Button>
++								))}
++							</div>
++
++							<div className="flex gap-2 mt-2">
++								<Input
++									value={deniedReadPathInput}
++									onChange={(e: any) => setDeniedReadPathInput(e.target.value)}
++									onKeyDown={(e: any) => {
++										if (e.key === "Enter") {
++											e.preventDefault()
++											handleAddPath(
++												deniedReadPathInput,
++												setDeniedReadPathInput,
++												deniedReadPaths,
++												"deniedReadPaths",
++											)
++										}
++									}}
++									placeholder="Denied path glob"
++									className="grow h-8"
++								/>
++								<Button
++									className="h-8"
++									onClick={() =>
++										handleAddPath(
++											deniedReadPathInput,
++											setDeniedReadPathInput,
++											deniedReadPaths,
++											"deniedReadPaths",
++										)
++									}>
++									Add
++								</Button>
++							</div>
++							<div className="flex flex-wrap gap-2 mt-1">
++								{(deniedReadPaths ?? []).map((path, index) => (
++									<Button
++										key={index}
++										variant="secondary"
++										size="sm"
++										className="h-7 px-2"
++										onClick={() => handleRemovePath(index, deniedReadPaths, "deniedReadPaths")}>
++										<div className="flex flex-row items-center gap-1">
++											<div className="max-w-[200px] truncate">{path}</div>
++											<X size={12} />
++										</div>
++									</Button>
++								))}
++							</div>
++						</div>
+ 					</div>
+ 				)}
+ 
+
+label export const AutoApproveSettings = ({
+
+ 								{t("settings:autoApprove.write.protected.description")}
+ 							</div>
+ 						</SearchableSetting>
++
++						<div className="space-y-2 mt-2">
++							<div className="flex gap-2">
++								<Input
++									value={writePathInput}
++									onChange={(e: any) => setWritePathInput(e.target.value)}
++									onKeyDown={(e: any) => {
++										if (e.key === "Enter") {
++											e.preventDefault()
++											handleAddPath(
++												writePathInput,
++												setWritePathInput,
++												allowedWritePaths,
++												"allowedWritePaths",
++											)
++										}
++									}}
++									placeholder="Allowed path glob"
++									className="grow h-8"
++								/>
++								<Button
++									className="h-8"
++									onClick={() =>
++										handleAddPath(
++											writePathInput,
++											setWritePathInput,
++											allowedWritePaths,
++											"allowedWritePaths",
++										)
++									}>
++									Add
++								</Button>
++							</div>
++							<div className="flex flex-wrap gap-2 mt-1">
++								{(allowedWritePaths ?? []).map((path, index) => (
++									<Button
++										key={index}
++										variant="secondary"
++										size="sm"
++										className="h-7 px-2"
++										onClick={() => handleRemovePath(index, allowedWritePaths, "allowedWritePaths")}>
++										<div className="flex flex-row items-center gap-1">
++											<div className="max-w-[200px] truncate">{path}</div>
++											<X size={12} />
++										</div>
++									</Button>
++								))}
++							</div>
++
++							<div className="flex gap-2 mt-2">
++								<Input
++									value={deniedWritePathInput}
++									onChange={(e: any) => setDeniedWritePathInput(e.target.value)}
++									onKeyDown={(e: any) => {
++										if (e.key === "Enter") {
++											e.preventDefault()
++											handleAddPath(
++												deniedWritePathInput,
++												setDeniedWritePathInput,
++												deniedWritePaths,
++												"deniedWritePaths",
++											)
++										}
++									}}
++									placeholder="Denied path glob"
++									className="grow h-8"
++								/>
++								<Button
++									className="h-8"
++									onClick={() =>
++										handleAddPath(
++											deniedWritePathInput,
++											setDeniedWritePathInput,
++											deniedWritePaths,
++											"deniedWritePaths",
++										)
++									}>
++									Add
++								</Button>
++							</div>
++							<div className="flex flex-wrap gap-2 mt-1">
++								{(deniedWritePaths ?? []).map((path, index) => (
++									<Button
++										key={index}
++										variant="secondary"
++										size="sm"
++										className="h-7 px-2"
++										onClick={() => handleRemovePath(index, deniedWritePaths, "deniedWritePaths")}>
++										<div className="flex flex-row items-center gap-1">
++											<div className="max-w-[200px] truncate">{path}</div>
++											<X size={12} />
++										</div>
++									</Button>
++								))}
++							</div>
++						</div>
+ 					</div>
+ 				)}
+ 
+
+file webview-ui/src/components/settings/SettingsView.tsx
+label type SettingsViewProps = {
+
+ 	onDone: () => void
+ 	targetSection?: string
+ 	editingProfile?: string // kilocode_change - profile to edit
++	allowedReadPaths?: string[] // kilocode_change
++	deniedReadPaths?: string[] // kilocode_change
++	allowedWritePaths?: string[] // kilocode_change
++	deniedWritePaths?: string[] // kilocode_change
+ }
+ 
+ // kilocode_change start - editingProfile
+ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props, ref) => {
+-	const { onDone, targetSection, editingProfile } = props
++	const { onDone, targetSection, editingProfile, allowedReadPaths, deniedReadPaths, allowedWritePaths, deniedWritePaths } =
++		props
+ 	// kilocode_change end - editingProfile
+ 	const { t } = useAppTranslation()
+ 
+
+label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props, ref)
+
+ 		includeCurrentTime,
+ 		includeCurrentCost,
+ 		maxGitStatusFiles,
++		allowedReadPaths: cachedAllowedReadPaths,
++		deniedReadPaths: cachedDeniedReadPaths,
++		allowedWritePaths: cachedAllowedWritePaths,
++		deniedWritePaths: cachedDeniedWritePaths,
+ 	} = cachedState
+ 
+ 	const apiConfiguration = useMemo(() => cachedState.apiConfiguration ?? {}, [cachedState.apiConfiguration])
+
+label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props, ref)
+
+ 					alwaysAllowModeSwitch,
+
+ 					deniedCommands: deniedCommands ?? [],
++					allowedReadPaths: cachedAllowedReadPaths ?? [],
++					deniedReadPaths: cachedDeniedReadPaths ?? [],
++					allowedWritePaths: cachedAllowedWritePaths ?? [],
++					deniedWritePaths: cachedDeniedWritePaths ?? [],
+ 					// Note that we use `null` instead of `undefined` since `JSON.stringify`
+ 					// will omit `undefined` when serializing the object and passing it to the
+ 					// extension host. We may need to do the same for other nullable fields.
+
+label const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props, ref)
+
+ 								allowedMaxRequests={allowedMaxRequests ?? undefined}
+ 								allowedMaxCost={allowedMaxCost ?? undefined}
+ 								deniedCommands={deniedCommands}
++								allowedReadPaths={cachedAllowedReadPaths}
++								deniedReadPaths={cachedDeniedReadPaths}
++								allowedWritePaths={cachedAllowedWritePaths}
++								deniedWritePaths={cachedDeniedWritePaths}
+ 								setCachedStateField={setCachedStateField}
+ 							/>
+ 						)}
+
+file webview-ui/src/context/ExtensionStateContext.tsx
+label import { convertTextMateToHljs } from "@src/utils/textMateToHljs"
+
+ import { ClineRulesToggles } from "@roo/cline-rules" // kilocode_change
+ 
+ export interface ExtensionStateContextType extends ExtensionState {
++	allowedReadPaths?: string[] // kilocode_change
++	setAllowedReadPaths: (value: string[]) => void // kilocode_change
++	deniedReadPaths?: string[] // kilocode_change
++	setDeniedReadPaths: (value: string[]) => void // kilocode_change
++	allowedWritePaths?: string[] // kilocode_change
++	setAllowedWritePaths: (value: string[]) => void // kilocode_change
++	deniedWritePaths?: string[] // kilocode_change
++	setDeniedWritePaths: (value: string[]) => void // kilocode_change
+ 	historyPreviewCollapsed?: boolean
+ 	showTaskTimeline?: boolean // kilocode_change
+ 	sendMessageOnEnter?: boolean // kilocode_change New state property for Enter key behavior
+
+label export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
+
+ 		shouldShowAnnouncement: false,
+ 		allowedCommands: [],
+ 		deniedCommands: [],
++		allowedReadPaths: [], // kilocode_change
++		deniedReadPaths: [], // kilocode_change
++		allowedWritePaths: [], // kilocode_change
++		deniedWritePaths: [], // kilocode_change
+ 		soundEnabled: false,
+ 		soundVolume: 0.5,
+ 		isBrowserSessionActive: false,
+
+label export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
+
+ 		setShowAnnouncement: (value) => setState((prevState) => ({ ...prevState, shouldShowAnnouncement: value })),
+ 		setAllowedCommands: (value) => setState((prevState) => ({ ...prevState, allowedCommands: value })),
+ 		setDeniedCommands: (value) => setState((prevState) => ({ ...prevState, deniedCommands: value })),
++		setAllowedReadPaths: (value) => setState((prevState) => ({ ...prevState, allowedReadPaths: value })), // kilocode_change
++		setDeniedReadPaths: (value) => setState((prevState) => ({ ...prevState, deniedReadPaths: value })), // kilocode_change
++		setAllowedWritePaths: (value) => setState((prevState) => ({ ...prevState, allowedWritePaths: value })), // kilocode_change
++		setDeniedWritePaths: (value) => setState((prevState) => ({ ...prevState, deniedWritePaths: value })), // kilocode_change
+ 		setAllowedMaxRequests: (value) => setState((prevState) => ({ ...prevState, allowedMaxRequests: value })),
+ 		setAllowedMaxCost: (value) => setState((prevState) => ({ ...prevState, allowedMaxCost: value })),
