@@ -1,14 +1,14 @@
 file launcher/LaunchController.cpp
 label void LaunchController::login()
 
-         m_session->demo = m_demo;
-         m_accountToUse->fillSession(m_session);
+ {
+     decideAccount();
  
-+        if (m_accountToUse->accountType() == AccountType::Offline) {
-+            launchInstance();
-+            return;
-+        }
++    if (m_accountToUse->accountType() == AccountType::Offline) {
++        launchInstance();
++        return;
++    }
 +
-         MinecraftAccountPtr accountToCheck;
- 
-         if (m_accountToUse->ownsMinecraft())
+     LaunchDecision decision = decideLaunchMode();
+     while (decision == LaunchDecision::Undecided) {
+         decision = decideLaunchMode();
