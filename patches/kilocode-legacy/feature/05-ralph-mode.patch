@@ -302,7 +302,7 @@ label export class ClineProvider
 +			ralphLoopLimit,
 +			ralphCompletionDelimiter,
 +			ralphKeepCurrentTask,
- 		} = await this.getState()
+
  
  		// kilocode_change start: Get active model for virtual quota fallback UI display
 

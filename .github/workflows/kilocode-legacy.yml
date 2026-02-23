@@ -1,8 +1,6 @@
-name: Kilocode
+name: Kilocode Legacy
 
 on:
-  schedule:
-    - cron: '0 23,11 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -10,7 +8,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  WORK_DIR: kilocode
+  WORK_DIR: kilocode-legacy
 
 jobs:
   build-and-release:
@@ -25,7 +23,7 @@ jobs:
         id: check-changes
         uses: ./.github/actions/check-changes
         with:
-          target-repo: Kilo-Org/kilocode
+          target-repo: Kilo-Org/kilocode-legacy
           target-branch: main
           target-dir: ${{ env.WORK_DIR }}
 
@@ -60,7 +58,9 @@ jobs:
       - name: Build
         if: steps.check-changes.outputs.has-changes == 'true'
         working-directory: ${{ env.WORK_DIR }}
-        run: npm run vsix:production
+        run: |
+          sed -i 's/"version": *"[0-9.]\+"/"version": "5.9.0"/' src/package.json
+          npm run vsix:production
 
       - name: Publish Build and Update SHA
         if: steps.check-changes.outputs.has-changes == 'true' && success()
@@ -69,6 +69,6 @@ jobs:
           old-sha: ${{ steps.check-changes.outputs.old-sha }}
           new-sha: ${{ steps.check-changes.outputs.new-sha }}
           target-dir: ${{ env.WORK_DIR }}
-          release-title: Kilocode Nightly
+          release-title: Kilocode Legacy
           release-tag: ${{ env.WORK_DIR }}
           release-glob: '*.vsix'
