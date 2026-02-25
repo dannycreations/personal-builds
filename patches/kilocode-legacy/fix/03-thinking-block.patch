@@ -1,0 +1,88 @@
+file src/core/task/Task.ts
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 		if (partial !== undefined) {
+ 			const lastMessage = this.clineMessages.at(-1)
+ 
+-			const isUpdatingPreviousPartial =
++			let messageToUpdate =
+ 				lastMessage && lastMessage.partial && lastMessage.type === "say" && lastMessage.say === type
++					? lastMessage
++					: undefined
++
++			if (!messageToUpdate && (type === "reasoning" || type === "text")) {
++				// kilocode_change start: recovery of fragmented content blocks during interleaved content
++				messageToUpdate = [...this.clineMessages]
++					.reverse()
++					.find((m) => m.type === "say" && m.say === type && m.partial)
++				// kilocode_change end
++			}
+ 
+ 			if (partial) {
+-				if (isUpdatingPreviousPartial) {
++				if (messageToUpdate) {
+ 					// Existing partial message, so update it.
+-					lastMessage.text = text
+-					lastMessage.images = images
+-					lastMessage.partial = partial
+-					lastMessage.progressStatus = progressStatus
+-					this.updateClineMessage(lastMessage)
++					messageToUpdate.text = text
++					messageToUpdate.images = images
++					messageToUpdate.partial = partial
++					messageToUpdate.progressStatus = progressStatus
++					this.updateClineMessage(messageToUpdate)
+ 				} else {
+ 					// This is a new partial message, so add it with partial state.
+ 					const sayTs = await this.nextClineMessageTimestamp_kilocode()
+
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 				// New now have a complete version of a previously partial message.
+ 				// This is the complete version of a previously partial
+ 				// message, so replace the partial with the complete version.
+-				if (isUpdatingPreviousPartial) {
++				if (messageToUpdate) {
+ 					if (!options.isNonInteractive) {
+-						this.lastMessageTs = lastMessage.ts
++						this.lastMessageTs = messageToUpdate.ts
+ 					}
+ 
+-					lastMessage.text = text
+-					lastMessage.images = images
+-					lastMessage.partial = false
+-					lastMessage.progressStatus = progressStatus
++					messageToUpdate.text = text
++					messageToUpdate.images = images
++					messageToUpdate.partial = false
++					messageToUpdate.progressStatus = progressStatus
+ 					// kilocode_change start
+ 					if (options.metadata) {
+-						lastMessage.metadata = Object.assign(lastMessage.metadata ?? {}, options.metadata)
++						messageToUpdate.metadata = Object.assign(messageToUpdate.metadata ?? {}, options.metadata)
+ 					}
+ 					// kilocode_change end
+ 
+ 					// Instead of streaming partialMessage events, we do a save
+ 					// and post like normal to persist to disk.
+ 					await this.saveClineMessages()
+ 
+ 					// More performant than an entire `postStateToWebview`.
+-					this.updateClineMessage(lastMessage)
++					this.updateClineMessage(messageToUpdate)
+ 				} else {
+ 					// This is a new and complete message, so add it like normal.
+ 					const sayTs = await this.nextClineMessageTimestamp_kilocode()
+
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 
+ 						switch (chunk.type) {
+ 							case "reasoning": {
++								if (!chunk.text) {
++									// kilocode_change: Skip empty chunks to prevent unnecessary UI updates or fragmentation.
++									break
++								}
+ 								reasoningMessage += chunk.text
+ 								// Only apply formatting if the message contains sentence-ending punctuation followed by **
+ 								let formattedReasoning = reasoningMessage

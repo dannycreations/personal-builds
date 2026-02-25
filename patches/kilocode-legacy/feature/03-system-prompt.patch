@@ -1,12 +1,8 @@
 file packages/types/src/experiment.ts
 label import type { Keys, Equals, AssertEqual } from "./type-fu.js"
 
-  * ExperimentId
-  */
- 
--const kilocodeExperimentIds = ["morphFastApply", "speechToText"] as const // kilocode_change
-+const kilocodeExperimentIds = ["rawSystemPrompt", "morphFastApply", "speechToText"] as const // kilocode_change
  export const experimentIds = [
++	"rawSystemPrompt",
  	"powerSteering",
  	"multiFileApplyDiff",
 
