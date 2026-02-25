@@ -1,0 +1,71 @@
+name: Kilocode
+
+on:
+  schedule:
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WORK_DIR: kilocode
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Local Repository
+        uses: actions/checkout@v6
+
+      - name: Checkout Target Repository
+        id: check-changes
+        uses: ./.github/actions/check-changes
+        with:
+          target-repo: Kilo-Org/kilocode
+          target-branch: main
+          target-dir: ${{ env.WORK_DIR }}
+
+      - name: Prepare Workspace
+        if: steps.check-changes.outputs.has-changes == 'true'
+        uses: ./.github/actions/prepare-workspace
+        with:
+          target-dir: ${{ env.WORK_DIR }}
+
+      - name: Setup Bun Environment
+        if: steps.check-changes.outputs.has-changes == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Bun Cache
+        if: steps.check-changes.outputs.has-changes == 'true'
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ env.WORK_DIR }}-${{ runner.os }}-bun-${{ hashFiles(format('{0}/bun.lock', env.WORK_DIR)) }}
+
+      - name: Install Deps and Build
+        if: steps.check-changes.outputs.has-changes == 'true'
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          VERSION=$(grep '"version":' packages/kilo-vscode/package.json | cut -d '"' -f 4)
+          sed -i "s/-vscode-/-${VERSION}-/g" packages/kilo-vscode/script/build.ts
+
+          bun i -g @vscode/vsce && bun i
+          bun --cwd packages/opencode script/build.ts
+          bun --cwd packages/kilo-vscode script/build.ts
+
+      - name: Publish Build and Update SHA
+        if: steps.check-changes.outputs.has-changes == 'true' && success()
+        uses: ./.github/actions/publish-build
+        with:
+          old-sha: ${{ steps.check-changes.outputs.old-sha }}
+          new-sha: ${{ steps.check-changes.outputs.new-sha }}
+          target-dir: ${{ env.WORK_DIR }}
+          release-title: Kilocode Nightly
+          release-tag: ${{ env.WORK_DIR }}
+          release-glob: 'packages/kilo-vscode/out/*-x64.vsix'
