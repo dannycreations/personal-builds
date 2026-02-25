@@ -126,10 +126,9 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: 'native',
++    defaultToolProtocol: 'xml',
 +    supportsReasoningEffort: ['low', 'medium', 'high'],
-+    reasoningEffort: 'low',
++    reasoningEffort: 'high',
 +    supportsTemperature: true,
 +    defaultTemperature: 1,
 +    inputPrice: 0,
@@ -140,10 +139,9 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: 'native',
++    defaultToolProtocol: 'xml',
 +    supportsReasoningEffort: ['low', 'high'],
-+    reasoningEffort: 'low',
++    reasoningEffort: 'high',
 +    supportsTemperature: true,
 +    defaultTemperature: 1,
 +    inputPrice: 0,
@@ -154,10 +152,9 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: 'native',
++    defaultToolProtocol: 'xml',
 +    supportsReasoningEffort: ['minimal', 'low', 'medium', 'high'],
-+    reasoningEffort: 'medium',
++    reasoningEffort: 'high',
 +    supportsTemperature: true,
 +    defaultTemperature: 1,
 +    inputPrice: 0,
@@ -168,8 +165,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: 'native',
++    defaultToolProtocol: 'xml',
 +    supportsReasoningBudget: true,
 +    requiredReasoningBudget: true,
 +    maxThinkingTokens: 32_768,
@@ -181,8 +177,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: 'native',
++    defaultToolProtocol: 'xml',
 +    supportsReasoningBudget: true,
 +    requiredReasoningBudget: true,
 +    maxThinkingTokens: 32_768,
@@ -194,8 +189,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
-+    supportsNativeTools: true,
-+    defaultToolProtocol: 'native',
++    defaultToolProtocol: 'xml',
 +    supportsReasoningBudget: true,
 +    requiredReasoningBudget: true,
 +    maxThinkingTokens: 32_768,
@@ -249,7 +243,6 @@ label export function buildApiHandler(configuration: ProviderSettings): ApiHandl
 
 file src/api/providers/gemini-cli.ts
 
-+import { FunctionCallingConfigMode } from '@google/genai';
 +import { geminiCliDefaultModelId, geminiCliModels } from '@roo-code/types';
 +import { readFile, writeFile } from 'fs/promises';
 +import { OAuth2Client } from 'google-auth-library';
@@ -284,8 +277,6 @@ file src/api/providers/gemini-cli.ts
 +  private authClient: OAuth2Client;
 +  private credentials?: OAuthCredentials;
 +  private projectId?: string;
-+  private lastResponseId?: string;
-+  private lastThoughtSignature?: string;
 +  private readonly credPath: string;
 +
 +  public constructor(options: ApiHandlerOptions) {
@@ -301,14 +292,9 @@ file src/api/providers/gemini-cli.ts
 +    metadata?: ApiHandlerCreateMessageMetadata,
 +  ): ApiStream {
 +    const { id: model, info, reasoning: thinkingConfig, maxTokens } = this.getModel();
-+    this.lastResponseId = undefined;
-+    this.lastThoughtSignature = undefined;
 +
 +    const isHybridReasoningModel = info.supportsReasoningBudget || info.requiredReasoningBudget;
 +    const maxOutputTokens = isHybridReasoningModel ? (this.options.modelMaxTokens ?? maxTokens ?? undefined) : (maxTokens ?? undefined);
-+
-+    const usingNativeTools = Boolean(metadata?.tools && metadata.tools.length > 0);
-+    const includeThoughtSignatures = Boolean(thinkingConfig) || usingNativeTools;
 +
 +    const geminiMessages = messages.filter((message): message is Anthropic.Messages.MessageParam => {
 +      const meta = message as { type?: string };
@@ -318,18 +304,7 @@ file src/api/providers/gemini-cli.ts
 +      return true;
 +    });
 +
-+    const toolIdToName = new Map<string, string>();
-+    for (const message of messages) {
-+      if (Array.isArray(message.content)) {
-+        for (const block of message.content) {
-+          if (block.type === 'tool_use') {
-+            toolIdToName.set(block.id, block.name);
-+          }
-+        }
-+      }
-+    }
-+
-+    const contents = geminiMessages.map((message) => convertAnthropicMessageToGemini(message, { includeThoughtSignatures, toolIdToName })).flat();
++    const contents = geminiMessages.map((message) => convertAnthropicMessageToGemini(message)).flat();
 +
 +    const supportsTemperature = info.supportsTemperature !== false;
 +    const temperatureConfig: number | undefined = supportsTemperature
@@ -358,44 +333,6 @@ file src/api/providers/gemini-cli.ts
 +      },
 +    };
 +
-+    if (this.shouldIncludeTools(info, metadata)) {
-+      requestBody.request.tools = [
-+        {
-+          functionDeclarations: metadata!.tools!.map((tool) => ({
-+            name: (tool as any).function.name,
-+            description: (tool as any).function.description,
-+            parametersJsonSchema: (tool as any).function.parameters,
-+          })),
-+        },
-+      ];
-+
-+      if (metadata?.allowedFunctionNames && metadata.allowedFunctionNames.length > 0) {
-+        requestBody.request.toolConfig = {
-+          functionCallingConfig: {
-+            mode: FunctionCallingConfigMode.ANY,
-+            allowedFunctionNames: metadata.allowedFunctionNames,
-+          },
-+        };
-+      } else if (metadata?.tool_choice) {
-+        const choice = metadata.tool_choice;
-+        let mode = FunctionCallingConfigMode.AUTO;
-+        let allowedFunctionNames: string[] | undefined;
-+
-+        if (choice === 'none') {
-+          mode = FunctionCallingConfigMode.NONE;
-+        } else if (choice === 'required') {
-+          mode = FunctionCallingConfigMode.ANY;
-+        } else if (typeof choice === 'object' && choice.type === 'function') {
-+          mode = FunctionCallingConfigMode.ANY;
-+          allowedFunctionNames = [choice.function.name];
-+        }
-+
-+        requestBody.request.toolConfig = {
-+          functionCallingConfig: { mode, ...(allowedFunctionNames ? { allowedFunctionNames } : {}) },
-+        };
-+      }
-+    }
-+
 +    const controller = new AbortController();
 +    const result = await this.authClient.request({
 +      url: this.getApiUrl('streamGenerateContent'),
@@ -408,7 +345,6 @@ file src/api/providers/gemini-cli.ts
 +    });
 +
 +    let lastUsage: any;
-+    let toolCallCounter = 0;
 +
 +    try {
 +      const stream = this.parseSSEStream(result.data as NodeJS.ReadableStream);
@@ -416,42 +352,12 @@ file src/api/providers/gemini-cli.ts
 +        const response = jsonData.response || jsonData;
 +        const candidate = response.candidates?.[0];
 +
-+        if (response.responseId) {
-+          this.lastResponseId = response.responseId;
-+        }
-+
 +        if (candidate?.content?.parts) {
 +          for (const part of candidate.content.parts) {
-+            const thoughtSignature = part.thoughtSignature;
-+            if (includeThoughtSignatures && thoughtSignature) {
-+              this.lastThoughtSignature = thoughtSignature;
-+            }
-+
 +            if (part.thought) {
 +              if (part.text) {
 +                yield { type: 'reasoning', text: part.text };
 +              }
-+            } else if (part.functionCall) {
-+              const callId = `${part.functionCall.name}-${toolCallCounter}`;
-+              const args = JSON.stringify(part.functionCall.args || {});
-+
-+              yield {
-+                type: 'tool_call_partial',
-+                index: toolCallCounter,
-+                id: callId,
-+                name: part.functionCall.name,
-+                arguments: undefined,
-+              };
-+
-+              yield {
-+                type: 'tool_call_partial',
-+                index: toolCallCounter,
-+                id: callId,
-+                name: undefined,
-+                arguments: args,
-+              };
-+
-+              toolCallCounter++;
 +            } else if (part.text) {
 +              yield { type: 'text', text: part.text };
 +            }
@@ -506,14 +412,6 @@ file src/api/providers/gemini-cli.ts
 +    );
 +  }
 +
-+  public getThoughtSignature(): string | undefined {
-+    return this.lastThoughtSignature;
-+  }
-+
-+  public getResponseId(): string | undefined {
-+    return this.lastResponseId;
-+  }
-+
 +  public override getModel() {
 +    const modelId = this.options.apiModelId?.replace(':thinking', '') || geminiCliDefaultModelId;
 +    const id = (modelId in geminiCliModels ? modelId : geminiCliDefaultModelId) as GeminiCliModelId;
@@ -523,10 +421,6 @@ file src/api/providers/gemini-cli.ts
 +
 +  private getApiUrl(method: string): string {
 +    return `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:${method}`;
-+  }
-+
-+  private shouldIncludeTools(info: any, metadata?: ApiHandlerCreateMessageMetadata): boolean {
-+    return !!(info.supportsNativeTools && metadata?.tools?.length && metadata.toolProtocol !== 'xml');
 +  }
 +
 +  private async ensureAuthenticated(): Promise<void> {
@@ -797,8 +691,8 @@ label export const MODELS_BY_PROVIDER: Partial<Record<ProviderName, Record<strin
 
 label export const PROVIDERS = [
 
- 	// kilocode_change start
-
+ 	{ value: "aihubmix", label: "AIhubmix", proxy: false },
+ 	{ value: "zenmux", label: "ZenMux" },
  	{ value: "inception", label: "Inception", proxy: false },
 +	{ value: "gemini-cli", label: "Gemini CLI", proxy: false },
  	{ value: "virtual-quota-fallback", label: "Virtual Quota Fallback", proxy: false },
