@@ -53,11 +53,11 @@ label export namespace Provider {
 
 file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 
-+import { type LanguageModelV2, type LanguageModelV2Content, type LanguageModelV2FinishReason } from "@ai-sdk/provider"
++import { Env } from "@/env"
++import { type LanguageModelV2, type LanguageModelV2FinishReason } from "@ai-sdk/provider"
 +import {
 +  combineHeaders,
 +  createEventSourceResponseHandler,
-+  createJsonErrorResponseHandler,
 +  createJsonResponseHandler,
 +  type FetchFunction,
 +  postJsonToApi,
@@ -69,6 +69,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +
 +const OAUTH_CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
 +const OAUTH_CLIENT_SECRET = "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"
++const OAUTH_DEFAULT_PATH = join(homedir(), ".gemini", "oauth_creds.json")
 +
 +interface OAuthCredentials {
 +  readonly access_token: string
@@ -84,11 +85,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  readonly fetch?: FetchFunction
 +}
 +
-+const failedResponseHandler = createJsonErrorResponseHandler({
-+  errorSchema: z.any(),
-+  errorToMessage: (data: unknown) => JSON.stringify(data),
-+})
-+
 +export class GeminiCliProvider implements LanguageModelV2 {
 +  readonly specificationVersion = "v2"
 +  readonly provider = "gemini-cli"
@@ -96,8 +92,8 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  readonly supportedUrls = {}
 +
 +  private readonly config: GeminiCliProviderConfig
-+  private readonly credPath: string
 +
++  private credPath: string = OAUTH_DEFAULT_PATH
 +  private credentials?: OAuthCredentials
 +  private projectId?: string
 +  private turnCount = 0
@@ -105,64 +101,30 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  public constructor(modelId: string, config: GeminiCliProviderConfig) {
 +    this.modelId = modelId
 +    this.config = config
-+    this.credPath = config.geminiCliOAuthPath || join(homedir(), ".gemini", "oauth_creds.json")
 +  }
 +
 +  public async doGenerate(
 +    options: Parameters<LanguageModelV2["doGenerate"]>[0],
 +  ): Promise<Awaited<ReturnType<LanguageModelV2["doGenerate"]>>> {
-+    const { headers, body } = await this.prepareRequest(options)
-+    const { responseHeaders, value: responseBody } = await postJsonToApi({
-+      url: `${this.config.baseURL}:generateContent`,
-+      headers,
-+      body,
-+      failedResponseHandler,
-+      successfulResponseHandler: createJsonResponseHandler(z.any()),
-+      abortSignal: options.abortSignal,
-+      fetch: this.config.fetch,
-+    })
++    const { body } = await this.prepareRequest(options)
++    const responseBody = await this.callEndpoint("generateContent", body)
 +
-+    const response = (responseBody as any).response || responseBody
-+    const usage = response.usageMetadata
++    const response = responseBody.response || responseBody
 +    const candidate = response.candidates?.[0]
-+    const content: Array<LanguageModelV2Content> = []
-+    let hasToolCall = false
-+
-+    if (candidate?.content?.parts) {
-+      for (const part of candidate.content.parts) {
-+        if (part.thought === true) {
-+          if (part.text) {
-+            const res: any = { type: "reasoning", text: part.text }
-+            if (part.thoughtSignature) res.thoughtSignature = part.thoughtSignature
-+            content.push(res)
-+          }
-+        } else if (part.text) {
-+          content.push({ type: "text", text: part.text })
-+        } else if (part.functionCall) {
-+          hasToolCall = true
-+          const res: any = {
-+            type: "tool-call",
-+            toolCallId: part.toolCallId ?? (Math.random() + 1).toString(36).substring(7),
-+            toolName: part.functionCall.name,
-+            args: part.functionCall.args,
-+          }
-+          if (part.thoughtSignature) res.thoughtSignature = part.thoughtSignature
-+          content.push(res)
-+        }
-+      }
-+    }
 +
 +    return {
-+      content,
-+      finishReason: mapGeminiFinishReason(candidate?.finishReason, hasToolCall),
++      content:
++        candidate?.content?.parts
++          ?.filter((p: any) => !p.thought && p.text)
++          ?.map((p: any) => p.text)
++          ?.join("") || "",
++      finishReason: candidate?.finishReason,
 +      usage: {
-+        inputTokens: usage?.promptTokenCount ?? undefined,
-+        outputTokens: usage?.candidatesTokenCount ?? undefined,
-+        totalTokens: usage?.totalTokenCount ?? undefined,
++        inputTokens: undefined,
++        outputTokens: undefined,
++        totalTokens: undefined,
 +      },
 +      warnings: [],
-+      request: { body: JSON.stringify(body) },
-+      response: { headers: responseHeaders, body: responseBody },
 +    }
 +  }
 +
@@ -170,26 +132,24 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +    options: Parameters<LanguageModelV2["doStream"]>[0],
 +  ): Promise<Awaited<ReturnType<LanguageModelV2["doStream"]>>> {
 +    const { headers, body } = await this.prepareRequest(options)
-+    const { responseHeaders, value: responseBody } = await postJsonToApi({
++    const { responseHeaders, value: stream } = await postJsonToApi({
 +      url: `${this.config.baseURL}:streamGenerateContent?alt=sse`,
 +      headers,
 +      body,
-+      failedResponseHandler,
++      failedResponseHandler: createJsonResponseHandler(z.any()),
 +      successfulResponseHandler: createEventSourceResponseHandler(z.any()),
 +      abortSignal: options.abortSignal,
 +      fetch: this.config.fetch,
 +    })
 +
-+    const response = (responseBody as any).response || responseBody
-+
-+    let rawFinishReason: string | null = null
++    let finishReason: string | null = null
 +    let usage: any = {}
 +    let activeReasoning = false
 +    let activeText = false
 +    let hasToolCall = false
 +
 +    return {
-+      stream: response.pipeThrough(
++      stream: stream.pipeThrough(
 +        new TransformStream({
 +          start(controller) {
 +            controller.enqueue({ type: "stream-start", warnings: [] })
@@ -201,14 +161,11 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +              return
 +            }
 +
-+            const val = chunk.value
-+            const res = (val as any).response || val
-+            const candidate = res.candidates?.[0]
++            const response = chunk.value.response || chunk.value
++            const candidate = response.candidates?.[0]
 +
-+            if (candidate?.finishReason != null) {
-+              rawFinishReason = candidate.finishReason
-+            }
-+            if (res.usageMetadata) usage = res.usageMetadata
++            if (candidate?.finishReason) finishReason = candidate.finishReason
++            if (response.usageMetadata) usage = response.usageMetadata
 +
 +            if (candidate?.content?.parts) {
 +              for (const part of candidate.content.parts) {
@@ -249,9 +206,10 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +          flush(controller) {
 +            if (activeReasoning) controller.enqueue({ type: "reasoning-end", id: "reasoning-0" })
 +            if (activeText) controller.enqueue({ type: "text-end", id: "txt-0" })
++
 +            controller.enqueue({
 +              type: "finish",
-+              finishReason: mapGeminiFinishReason(rawFinishReason, hasToolCall),
++              finishReason: mapGeminiFinishReason(finishReason, hasToolCall),
 +              usage: {
 +                inputTokens: usage?.promptTokenCount,
 +                outputTokens: usage?.candidatesTokenCount,
@@ -268,6 +226,17 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +
 +  private async ensureAuthenticated(): Promise<void> {
 +    if (!this.credentials) {
++      let geminiCliOAuthPath = this.config.geminiCliOAuthPath || Env.get("GOOGLE_OAUTH_PATH")
++      if (!geminiCliOAuthPath) {
++        try {
++          const content = await Bun.file(join(dirname(OAUTH_DEFAULT_PATH), ".env")).text()
++          const match = content.match(/GOOGLE_OAUTH_PATH=["']?([^"'\r\n\s]+)["']?/)
++          if (match?.[1]) geminiCliOAuthPath = match[1].trim()
++        } catch {}
++      }
++
++      this.credPath = geminiCliOAuthPath || OAUTH_DEFAULT_PATH
++
 +      const file = Bun.file(this.credPath)
 +      if (await file.exists()) {
 +        this.credentials = await file.json()
@@ -275,7 +244,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +    }
 +
 +    if (this.credentials && this.credentials.expiry_date - 60_000 < Date.now()) {
-+      const { value } = await postJsonToApi({
++      const { value: responseBody } = await postJsonToApi({
 +        url: "https://oauth2.googleapis.com/token",
 +        body: {
 +          client_id: OAUTH_CLIENT_ID,
@@ -283,7 +252,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +          refresh_token: this.credentials.refresh_token,
 +          grant_type: "refresh_token",
 +        },
-+        failedResponseHandler,
++        failedResponseHandler: createJsonResponseHandler(z.any()),
 +        successfulResponseHandler: createJsonResponseHandler(
 +          z.object({
 +            access_token: z.string(),
@@ -295,18 +264,11 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +        fetch: this.config.fetch,
 +      })
 +
-+      const credentials = value as {
-+        access_token: string
-+        refresh_token?: string
-+        token_type?: string
-+        expires_in?: number
-+      }
-+
 +      this.credentials = {
-+        access_token: credentials.access_token,
-+        refresh_token: credentials.refresh_token || this.credentials.refresh_token,
-+        token_type: credentials.token_type || "Bearer",
-+        expiry_date: credentials.expires_in ? Date.now() + credentials.expires_in * 1000 : Date.now() + 3600000,
++        access_token: responseBody.access_token,
++        refresh_token: responseBody.refresh_token || this.credentials.refresh_token,
++        token_type: responseBody.token_type || "Bearer",
++        expiry_date: responseBody.expires_in ? Date.now() + responseBody.expires_in * 1000 : Date.now() + 3600000,
 +      }
 +      await Bun.write(this.credPath, JSON.stringify(this.credentials, null, 2))
 +    }
@@ -320,8 +282,9 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +      return
 +    }
 +
-+    if (process.env.GOOGLE_CLOUD_PROJECT) {
-+      this.projectId = process.env.GOOGLE_CLOUD_PROJECT
++    const projectId = Env.get("GOOGLE_CLOUD_PROJECT")
++    if (projectId) {
++      this.projectId = projectId
 +      return
 +    }
 +
@@ -356,8 +319,8 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +        const response = await fetchFn(`${this.config.baseURL}/${op}`, {
 +          method: "GET",
 +          headers: {
-+            "Content-Type": "application/json",
 +            Authorization: `Bearer ${this.credentials?.access_token}`,
++            "Content-Type": "application/json",
 +          },
 +        })
 +        onboard = await response.json()
@@ -366,33 +329,32 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +    this.projectId = onboard.response?.cloudaicompanionProject?.id
 +  }
 +
-+  private async callEndpoint(method: string, data: any, retry = true): Promise<any> {
++  private async callEndpoint(method: string, body: any, retry = true): Promise<any> {
 +    try {
 +      await this.ensureAuthenticated()
 +
-+      const { value } = await postJsonToApi({
++      const { value: responseBody } = await postJsonToApi({
 +        url: `${this.config.baseURL}:${method}`,
-+        headers: {
-+          "Content-Type": "application/json",
-+          Authorization: `Bearer ${this.credentials?.access_token}`,
-+        },
-+        body: data,
-+        failedResponseHandler,
++        headers: { Authorization: `Bearer ${this.credentials?.access_token}` },
++        body,
++        failedResponseHandler: createJsonResponseHandler(z.any()),
 +        successfulResponseHandler: createJsonResponseHandler(z.any()),
 +        fetch: this.config.fetch,
 +      })
-+      return value
++
++      return responseBody
 +    } catch (error: any) {
-+      if (error.statusCode === 401 && retry) {
++      if (error.code === 401 && retry) {
 +        this.credentials = undefined
-+        return this.callEndpoint(method, data, false)
++        return this.callEndpoint(method, body, false)
 +      }
 +      throw error
 +    }
 +  }
 +
 +  private async prepareRequest(options: Parameters<LanguageModelV2["doGenerate"] | LanguageModelV2["doStream"]>[0]) {
-+    await Promise.all([this.ensureAuthenticated(), this.discoverProjectId()])
++    await this.ensureAuthenticated()
++    await this.discoverProjectId()
 +
 +    this.turnCount++
 +    const geminiOptions = options.providerOptions?.["gemini-cli"]
@@ -546,16 +508,12 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  hasToolCall: boolean,
 +): LanguageModelV2FinishReason {
 +  if (hasToolCall) return "tool-calls"
-+  switch (finishReason) {
-+    case "STOP":
-+    case "stop":
-+      return "stop"
-+    case "MAX_TOKENS":
++  switch (finishReason?.toLowerCase()) {
 +    case "max_tokens":
 +      return "length"
-+    case "SAFETY":
-+    case "RECITATION":
-+    case "OTHER":
++    case "safety":
++    case "recitation":
++    case "other":
 +      return "content-filter"
 +    default:
 +      return "stop"
@@ -572,7 +530,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +  id: "gemini-cli",
 +  npm: "gemini-cli",
 +  name: "Gemini CLI",
-+  env: ["GOOGLE_CLOUD_PROJECT"],
++  env: ["GOOGLE_OAUTH_PATH", "GOOGLE_CLOUD_PROJECT"],
 +  api: "https://cloudcode-pa.googleapis.com/v1internal",
 +  models: {
 +    "gemini-3.1-pro-preview": {
