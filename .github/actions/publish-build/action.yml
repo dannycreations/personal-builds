@@ -17,7 +17,7 @@ inputs:
     description: 'The name of the release tag'
     required: true
   release-glob:
-    description: 'Glob pattern to find release artifacts (e.g., "*.apk" or "MSVC-*.zip")'
+    description: 'Space-separated glob patterns to find release artifacts (e.g., "*.apk *.exe")'
     required: true
   prerelease:
     description: 'Whether this is a pre-release (true/false)'
@@ -48,11 +48,15 @@ runs:
     - name: Publish GitHub Release
       shell: bash
       run: |
-        if [[ "${{ inputs.release-glob }}" == *"/"* ]]; then
-          FILES=$(find "${{ github.workspace }}" -type f -path "*/${{ inputs.release-glob }}" | tr '\n' ' ')
-        else
-          FILES=$(find "${{ github.workspace }}" -type f -name "${{ inputs.release-glob }}" | tr '\n' ' ')
-        fi
+        FILES=""
+        for GLOB in ${{ inputs.release-glob }}; do
+          if [[ "$GLOB" == *"/"* ]]; then
+            FOUND=$(find "${{ github.workspace }}" -type f -path "*/$GLOB" | tr '\n' ' ')
+          else
+            FOUND=$(find "${{ github.workspace }}" -type f -name "$GLOB" | tr '\n' ' ')
+          fi
+          FILES="$FILES $FOUND"
+        done
 
         if [ -z "$(echo $FILES | xargs)" ]; then
           echo "Error: No artifacts found matching pattern: ${{ inputs.release-glob }}"

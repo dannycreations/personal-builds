@@ -71,4 +71,4 @@ jobs:
           target-dir: ${{ env.WORK_DIR }}
           release-title: Kilocode Legacy
           release-tag: ${{ env.WORK_DIR }}
-          release-glob: '*.vsix'
+          release-glob: '${{ env.WORK_DIR }}/*.vsix'

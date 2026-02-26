@@ -127,4 +127,4 @@ jobs:
           target-dir: ${{ env.WORK_DIR }}
           release-title: PrismLauncher Nightly
           release-tag: ${{ env.WORK_DIR }}
-          release-glob: 'MSVC-*.zip'
+          release-glob: '${{ env.WORK_DIR }}/MSVC-*.zip'

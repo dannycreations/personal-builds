@@ -50,4 +50,4 @@ jobs:
         with:
           release-title: Morphe Nightly
           release-tag: ${{ env.WORK_DIR }}
-          release-glob: '*/build/*.apk'
+          release-glob: '${{ env.WORK_DIR }}/build/*.apk'
