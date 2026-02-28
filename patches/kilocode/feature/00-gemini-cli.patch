@@ -54,14 +54,22 @@ label export namespace Provider {
 file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 
 +import { Env } from "@/env"
-+import { type LanguageModelV2, type LanguageModelV2FinishReason } from "@ai-sdk/provider"
++import {
++  type LanguageModelV2,
++  type LanguageModelV2Content,
++  type LanguageModelV2FinishReason,
++  type LanguageModelV2Prompt,
++  type LanguageModelV2ToolChoice,
++} from "@ai-sdk/provider"
 +import {
 +  combineHeaders,
 +  createEventSourceResponseHandler,
 +  createJsonResponseHandler,
-+  type FetchFunction,
++  generateId,
 +  postJsonToApi,
++  type FetchFunction,
 +} from "@ai-sdk/provider-utils"
++import { writeFileSync } from "node:fs"
 +import { arch, homedir, platform } from "node:os"
 +import { dirname, join } from "node:path"
 +import { z } from "zod/v4"
@@ -97,6 +105,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  private credentials?: OAuthCredentials
 +  private projectId?: string
 +  private turnCount = 0
++  private debugCounter = 0
 +
 +  public constructor(modelId: string, config: GeminiCliProviderConfig) {
 +    this.modelId = modelId
@@ -106,23 +115,77 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  public async doGenerate(
 +    options: Parameters<LanguageModelV2["doGenerate"]>[0],
 +  ): Promise<Awaited<ReturnType<LanguageModelV2["doGenerate"]>>> {
-+    const { body } = await this.prepareRequest(options)
-+    const responseBody = await this.callEndpoint("generateContent", body)
++    const { headers, body } = await this.prepareRequest(options)
 +
-+    const response = responseBody.response || responseBody
++    const id = ++this.debugCounter
++    writeFileSync(join(process.cwd(), "debug", `doGenerate-request-raw-${id}.json`), JSON.stringify(options, null, 2))
++    writeFileSync(join(process.cwd(), "debug", `doGenerate-request-map-${id}.json`), JSON.stringify(body, null, 2))
++
++    const { value: responseBody } = await postJsonToApi({
++      url: `${this.config.baseURL}:generateContent`,
++      headers,
++      body,
++      failedResponseHandler: createJsonResponseHandler(z.any()),
++      successfulResponseHandler: createJsonResponseHandler(z.any()),
++      abortSignal: options.abortSignal,
++      fetch: this.config.fetch,
++    }).catch((error) => {
++      writeFileSync(
++        join(process.cwd(), "debug", `doGenerate-response-error-${id}.json`),
++        JSON.stringify(error, null, 2),
++      )
++      throw error
++    })
++
++    writeFileSync(
++      join(process.cwd(), "debug", `doGenerate-response-success-${id}.json`),
++      JSON.stringify(responseBody, null, 2),
++    )
++
++    const response = responseBody.response
 +    const candidate = response.candidates?.[0]
++    const content: LanguageModelV2Content[] = []
++
++    if (candidate?.content?.parts) {
++      for (const part of candidate.content.parts) {
++        if (part.text) {
++          if (part.thought) {
++            content.push({ type: "reasoning", text: part.text })
++          } else {
++            content.push({ type: "text", text: part.text })
++          }
++        }
++        if (part.functionCall) {
++          content.push({
++            type: "tool-call",
++            toolCallId: generateId(),
++            toolName: part.functionCall.name,
++            input: JSON.stringify(part.functionCall.args),
++          })
++        }
++      }
++    }
++
++    let finishReason: LanguageModelV2FinishReason = "unknown"
++    const reason = candidate?.finishReason
++    if (reason === "STOP") finishReason = "stop"
++    else if (reason === "MAX_TOKENS") finishReason = "length"
++    else if (reason === "SAFETY") finishReason = "content-filter"
++    else if (reason === "RECITATION") finishReason = "content-filter"
++    else if (reason === "OTHER") finishReason = "other"
++
++    if (content.some((c) => c.type === "tool-call")) {
++      finishReason = "tool-calls"
++    }
 +
 +    return {
-+      content:
-+        candidate?.content?.parts
-+          ?.filter((p: any) => !p.thought && p.text)
-+          ?.map((p: any) => p.text)
-+          ?.join("") || "",
-+      finishReason: candidate?.finishReason,
++      content,
++      finishReason,
 +      usage: {
-+        inputTokens: undefined,
-+        outputTokens: undefined,
-+        totalTokens: undefined,
++        inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
++        outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
++        totalTokens:
++          (response.usageMetadata?.promptTokenCount ?? 0) + (response.usageMetadata?.candidatesTokenCount ?? 0),
 +      },
 +      warnings: [],
 +    }
@@ -132,7 +195,12 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +    options: Parameters<LanguageModelV2["doStream"]>[0],
 +  ): Promise<Awaited<ReturnType<LanguageModelV2["doStream"]>>> {
 +    const { headers, body } = await this.prepareRequest(options)
-+    const { responseHeaders, value: stream } = await postJsonToApi({
++
++    const id = ++this.debugCounter
++    writeFileSync(join(process.cwd(), "debug", `doStream-request-raw-${id}.json`), JSON.stringify(options, null, 2))
++    writeFileSync(join(process.cwd(), "debug", `doStream-request-map-${id}.json`), JSON.stringify(body, null, 2))
++
++    const { value: stream } = await postJsonToApi({
 +      url: `${this.config.baseURL}:streamGenerateContent?alt=sse`,
 +      headers,
 +      body,
@@ -140,13 +208,18 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +      successfulResponseHandler: createEventSourceResponseHandler(z.any()),
 +      abortSignal: options.abortSignal,
 +      fetch: this.config.fetch,
++    }).catch((error) => {
++      writeFileSync(join(process.cwd(), "debug", `doStream-response-error-${id}.json`), JSON.stringify(error, null, 2))
++      throw error
 +    })
 +
-+    let finishReason: string | null = null
-+    let usage: any = {}
-+    let activeReasoning = false
-+    let activeText = false
-+    let hasToolCall = false
++    let finishReason: LanguageModelV2FinishReason = "unknown"
++    let usage: any = null
++    let activeReasoning: string | null = null
++    let activeText: string | null = null
++    let activeToolCall: string | null = null
++
++    let chunks: any[] = []
 +
 +    return {
 +      stream: stream.pipeThrough(
@@ -155,72 +228,85 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +            controller.enqueue({ type: "stream-start", warnings: [] })
 +          },
 +          transform(chunk, controller) {
-+            if (options.includeRawChunks) controller.enqueue({ type: "raw", rawValue: chunk.rawValue })
++            chunks.push(chunk)
 +            if (!chunk.success) {
 +              controller.enqueue({ type: "error", error: chunk.error })
 +              return
 +            }
 +
-+            const response = chunk.value.response || chunk.value
++            const response = chunk.value.response
 +            const candidate = response.candidates?.[0]
-+
-+            if (candidate?.finishReason) finishReason = candidate.finishReason
-+            if (response.usageMetadata) usage = response.usageMetadata
 +
 +            if (candidate?.content?.parts) {
 +              for (const part of candidate.content.parts) {
-+                if (part.thought === true) {
-+                  if (part.text) {
++                if (part.text) {
++                  if (part.thought) {
 +                    if (!activeReasoning) {
-+                      const msg: any = { type: "reasoning-start", id: "reasoning-0" }
-+                      if (part.thoughtSignature) msg.thoughtSignature = part.thoughtSignature
-+                      controller.enqueue(msg)
-+                      activeReasoning = true
++                      activeReasoning = generateId()
++                      controller.enqueue({ type: "reasoning-start", id: activeReasoning })
 +                    }
-+                    controller.enqueue({ type: "reasoning-delta", id: "reasoning-0", delta: part.text })
++                    controller.enqueue({ type: "reasoning-delta", id: activeReasoning, delta: part.text })
++                  } else {
++                    if (!activeText) {
++                      activeText = generateId()
++                      controller.enqueue({ type: "text-start", id: activeText })
++                    }
++                    controller.enqueue({ type: "text-delta", id: activeText, delta: part.text })
 +                  }
-+                } else if (part.text) {
-+                  if (activeReasoning) {
-+                    controller.enqueue({ type: "reasoning-end", id: "reasoning-0" })
-+                    activeReasoning = false
-+                  }
-+                  if (!activeText) {
-+                    controller.enqueue({ type: "text-start", id: "txt-0" })
-+                    activeText = true
-+                  }
-+                  controller.enqueue({ type: "text-delta", id: "txt-0", delta: part.text })
 +                } else if (part.functionCall) {
-+                  hasToolCall = true
-+                  const res: any = {
++                  activeToolCall = generateId()
++                  controller.enqueue({
 +                    type: "tool-call",
-+                    toolCallId: part.toolCallId ?? (Math.random() + 1).toString(36).substring(7),
++                    toolCallId: activeToolCall,
 +                    toolName: part.functionCall.name,
-+                    args: part.functionCall.args,
-+                  }
-+                  if (part.thoughtSignature) res.thoughtSignature = part.thoughtSignature
-+                  controller.enqueue(res)
++                    input: JSON.stringify(part.functionCall.args),
++                  })
 +                }
 +              }
 +            }
++
++            if (response.usageMetadata) usage = response.usageMetadata
++            if (candidate?.finishReason) {
++              if (activeToolCall) {
++                finishReason = "tool-calls"
++                return
++              }
++
++              const reason = candidate?.finishReason
++              if (reason === "STOP") finishReason = "stop"
++              else if (reason === "MAX_TOKENS") finishReason = "length"
++              else if (reason === "SAFETY") finishReason = "content-filter"
++              else if (reason === "RECITATION") finishReason = "content-filter"
++              else if (reason === "OTHER") finishReason = "other"
++            }
 +          },
 +          flush(controller) {
-+            if (activeReasoning) controller.enqueue({ type: "reasoning-end", id: "reasoning-0" })
-+            if (activeText) controller.enqueue({ type: "text-end", id: "txt-0" })
++            writeFileSync(
++              join(process.cwd(), "debug", `doStream-response-success-${id}.json`),
++              JSON.stringify(chunks, null, 2),
++            )
++            if (activeReasoning) {
++              controller.enqueue({ type: "reasoning-end", id: activeReasoning })
++              activeReasoning = null
++            }
++            if (activeText) {
++              controller.enqueue({ type: "text-end", id: activeText })
++              activeText = null
++            }
++            activeToolCall = null
 +
 +            controller.enqueue({
 +              type: "finish",
-+              finishReason: mapGeminiFinishReason(finishReason, hasToolCall),
++              finishReason,
 +              usage: {
-+                inputTokens: usage?.promptTokenCount,
-+                outputTokens: usage?.candidatesTokenCount,
-+                totalTokens: usage?.totalTokenCount,
++                inputTokens: usage?.promptTokenCount ?? 0,
++                outputTokens: usage?.candidatesTokenCount ?? 0,
++                totalTokens: (usage?.promptTokenCount ?? 0) + (usage?.candidatesTokenCount ?? 0),
 +              },
 +            })
 +          },
 +        }),
 +      ),
-+      request: { body: JSON.stringify(body) },
-+      response: { headers: responseHeaders },
 +    }
 +  }
 +
@@ -356,12 +442,11 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +    await this.ensureAuthenticated()
 +    await this.discoverProjectId()
 +
-+    this.turnCount++
 +    const geminiOptions = options.providerOptions?.["gemini-cli"]
 +    const sessionId = geminiOptions?.session_id
-+    const userPromptId = sessionId ? `${sessionId}########${this.turnCount}` : undefined
-+    const { systemInstruction, contents } = convertPromptToGemini(options.prompt)
-+    const toolSettings = convertToolsToGemini(options.tools, options.toolChoice)
++    const userPromptId = sessionId ? `${sessionId}########${++this.turnCount}` : undefined
++    const { systemInstruction, contents } = mapPromptToGemini(options.prompt)
++    const toolSettings = mapToolsToGemini(options.tools, options.toolChoice)
 +
 +    const body = {
 +      model: this.modelId,
@@ -371,7 +456,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +        systemInstruction,
 +        contents,
 +        ...(toolSettings?.tools ? { tools: toolSettings.tools } : {}),
-+        ...(toolSettings?.toolConfig ? { toolConfig: toolSettings.toolConfig } : {}),
 +        generationConfig: {
 +          ...(options.temperature != null ? { temperature: options.temperature } : {}),
 +          ...(options.topP != null ? { topP: options.topP } : {}),
@@ -395,129 +479,90 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  }
 +}
 +
-+function convertPromptToGemini(prompt: Parameters<LanguageModelV2["doGenerate"]>[0]["prompt"]) {
++function mapPromptToGemini(prompt: LanguageModelV2Prompt): {
++  systemInstruction?: any
++  contents: any[]
++} {
++  let systemInstruction: any = undefined
 +  const contents: any[] = []
-+  const systemParts: any[] = []
 +
-+  for (const msg of prompt) {
-+    const { role, content, providerOptions } = msg
-+    const isSystem = role === "system"
-+    const opts = providerOptions?.["gemini-cli"]
++  for (const message of prompt) {
++    if (message.content.length < 1) continue
 +
-+    if (typeof content === "string") {
-+      if (isSystem) {
-+        if (content) systemParts.push({ text: content })
-+      } else {
-+        contents.push({ role: role === "assistant" ? "model" : "user", parts: [{ text: content }] })
++    if (message.role === "system") {
++      systemInstruction = {
++        role: "user",
++        parts: [{ text: message.content }],
 +      }
 +      continue
 +    }
 +
++    const role = message.role === "assistant" ? "model" : "user"
 +    const parts: any[] = []
-+    for (const it of content as any[]) {
-+      if ((it.type === "text" || it.type === "reasoning") && it.text) {
-+        const res: any = { text: it.text }
-+        if (it.type === "reasoning") res.thought = true
-+        const sig = it.thoughtSignature || opts?.thoughtSignature
-+        if (sig) res.thoughtSignature = sig
-+        parts.push(res)
-+      } else if (it.type === "file") {
-+        const mime = it.mediaType || it.mimeType
-+        if (mime?.startsWith("image/")) parts.push({ inlineData: { mimeType: mime, data: it.data } })
-+      } else if (it.type === "tool-call") {
-+        const res: any = { functionCall: { name: it.toolName, args: it.args } }
-+        if (it.thoughtSignature) res.thoughtSignature = it.thoughtSignature
-+        parts.push(res)
-+      } else if (it.type === "tool-result") {
-+        parts.push({ functionResponse: { name: it.toolName, response: { result: it.result } } })
++
++    for (const part of message.content) {
++      if (part.type === "text") {
++        parts.push({ text: part.text })
++      } else if (part.type === "tool-call") {
++        parts.push({
++          functionCall: {
++            name: part.toolName,
++            args: (part as any).args,
++          },
++          thoughtSignature: "skip_thought_signature_validator",
++        })
++      } else if (part.type === "tool-result") {
++        parts.push({
++          functionResponse: {
++            id: part.toolCallId,
++            name: part.toolName,
++            response: { output: JSON.stringify((part as any).result) },
++          },
++        })
 +      }
 +    }
 +
-+    if (parts.length > 0) {
-+      if (isSystem) {
-+        for (const p of parts) if (p.text) systemParts.push(p)
-+      } else {
-+        contents.push({ role: role === "assistant" ? "model" : "user", parts })
-+      }
-+    }
++    contents.push({ role, parts })
 +  }
 +
-+  return { systemInstruction: systemParts.length ? { parts: systemParts } : undefined, contents }
++  return { systemInstruction, contents }
 +}
 +
-+function convertToolsToGemini(
-+  tools: Parameters<LanguageModelV2["doGenerate"]>[0]["tools"],
-+  toolChoice: Parameters<LanguageModelV2["doGenerate"]>[0]["toolChoice"],
-+) {
-+  if (!tools || tools.length === 0) return undefined
++function mapToolsToGemini(tools?: any[], toolChoice?: LanguageModelV2ToolChoice): { tools?: any[]; toolConfig?: any } {
++  if (!tools || tools.length === 0) return {}
 +
-+  const declarations = tools
++  const functionDeclarations = tools
 +    .map((tool) => {
 +      if (tool.type === "function") {
 +        return {
 +          name: tool.name,
-+          description: tool.description,
-+          parameters: sanitizeGeminiSchema(tool.inputSchema),
++          description: tool.description ?? "",
++          parametersJsonSchema: tool.inputSchema,
 +        }
 +      }
++      return undefined
 +    })
 +    .filter(Boolean)
 +
-+  const mode = toolChoice?.type === "none" ? "NONE" : toolChoice?.type === "required" ? "ANY" : "AUTO"
++  const mappedTools = [{ functionDeclarations }]
 +
-+  return {
-+    tools: [{ functionDeclarations: declarations }],
-+    toolConfig: { functionCallingConfig: { mode } },
-+  }
-+}
-+
-+function sanitizeGeminiSchema(schema: any): any {
-+  if (schema == null || typeof schema !== "object") return schema
-+  if (Array.isArray(schema)) {
-+    const res = schema.map(sanitizeGeminiSchema)
-+    return res.every((v, i) => v === schema[i]) ? schema : res
-+  }
-+
-+  const ref = schema.ref || schema.$ref
-+  const hasStruct = "type" in schema || "properties" in schema || "items" in schema
-+  const res: any = {}
-+  let changed = false
-+
-+  for (const k in schema) {
-+    if (k === "$schema" || ((k === "ref" || k === "$ref") && hasStruct)) {
-+      changed = true
-+      continue
++  let toolConfig: any = undefined
++  if (toolChoice) {
++    if (toolChoice.type === "auto") {
++      toolConfig = { functionCallingConfig: { mode: "AUTO" } }
++    } else if (toolChoice.type === "required") {
++      toolConfig = { functionCallingConfig: { mode: "ANY" } }
++    } else if (toolChoice.type === "tool") {
++      toolConfig = {
++        functionCallingConfig: {
++          mode: "ANY",
++          allowedFunctionNames: [toolChoice.toolName],
++        },
++      }
 +    }
-+    if (ref && !hasStruct && !["ref", "$ref", "description", "default"].includes(k)) {
-+      changed = true
-+      continue
-+    }
-+    const val = schema[k]
-+    const sVal = sanitizeGeminiSchema(val)
-+    const nK = k === "ref" || k === "$ref" ? "ref" : k
-+    if (sVal !== val || nK !== k) changed = true
-+    res[nK] = sVal
 +  }
 +
-+  if (!changed && Object.keys(res).length === Object.keys(schema).length) return schema
-+  return res
-+}
-+
-+function mapGeminiFinishReason(
-+  finishReason: string | null | undefined,
-+  hasToolCall: boolean,
-+): LanguageModelV2FinishReason {
-+  if (hasToolCall) return "tool-calls"
-+  switch (finishReason?.toLowerCase()) {
-+    case "max_tokens":
-+      return "length"
-+    case "safety":
-+    case "recitation":
-+    case "other":
-+      return "content-filter"
-+    default:
-+      return "stop"
-+  }
++  return { tools: mappedTools, toolConfig }
 +}
 
 file packages/opencode/src/provider/sdk/gemini-cli/index.ts
@@ -699,69 +744,6 @@ label export namespace ProviderTransform {
 
 label export namespace ProviderTransform {
 
-               content: filteredContent,
-               providerOptions: {
-                 ...msg.providerOptions,
-+                "gemini-cli": {
-+                  ...(msg.providerOptions as any)?.["gemini-cli"],
-+                  thoughtSignature: (reasoningParts[0] as any)?.thoughtSignature,
-+                },
-                 openaiCompatible: {
-                   ...(msg.providerOptions as any)?.openaiCompatible,
-                   [field]: reasoningText,
-
-label export namespace ProviderTransform {
-
-     if (id.includes("grok")) return {}
- 
-     switch (model.api.npm) {
-+      case "gemini-cli":
-+        if (id.includes("3.1")) {
-+          return Object.fromEntries(
-+            ["low", "medium", "high"].map((effort) => [
-+              effort,
-+              {
-+                includeThoughts: true,
-+                thinkingLevel: effort.toUpperCase(),
-+              },
-+            ]),
-+          )
-+        }
-+        if (id.includes("3")) {
-+          return Object.fromEntries(
-+            ["low", "high"].map((effort) => [
-+              effort,
-+              {
-+                includeThoughts: true,
-+                thinkingLevel: effort.toUpperCase(),
-+              },
-+            ]),
-+          )
-+        }
-+        if (id.includes("2.5")) {
-+          return {
-+            high: {
-+              thinkingConfig: {
-+                includeThoughts: true,
-+                thinkingBudget: 16000,
-+              },
-+            },
-+            max: {
-+              thinkingConfig: {
-+                includeThoughts: true,
-+                thinkingBudget: 24576,
-+              },
-+            },
-+          }
-+        }
-+        return {}
-+
-       case "@openrouter/ai-sdk-provider":
-         if (!model.id.includes("gpt") && !model.id.includes("gemini-3") && !model.id.includes("claude")) return {}
-         return Object.fromEntries(OPENAI_EFFORTS.map((effort) => [effort, { reasoning: { effort } }]))
-
-label export namespace ProviderTransform {
-
    }): Record<string, any> {
      const result: Record<string, any> = {}
  
@@ -788,8 +770,9 @@ label export namespace ProviderTransform {
          includeThoughts: true,
        }
        if (input.model.api.id.includes("gemini-3")) {
--        result["thinkingConfig"]["thinkingLevel"] = "high"
-+        result["thinkingConfig"]["thinkingLevel"] = "HIGH"
+         result["thinkingConfig"]["thinkingLevel"] = "high"
++      } else if (input.model.api.id.includes("gemini-2")) {
++        result["thinkingConfig"]["thinkingBudget"] = 24576
        }
      }
  

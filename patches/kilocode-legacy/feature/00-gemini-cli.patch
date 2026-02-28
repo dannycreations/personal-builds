@@ -4,7 +4,6 @@ label export const geminiProviderSchema = baseProviderSchema.extend({
  	enableGrounding: z.boolean().optional(),
  })
  
-+// Gemini CLI provider
 +export const geminiCliProviderSchema = baseProviderSchema.extend({
 +	provider: z.literal("gemini-cli"),
 +	apiModelId: z.string().optional(),
@@ -128,7 +127,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    supportsPromptCache: true,
 +    defaultToolProtocol: 'xml',
 +    supportsReasoningEffort: ['low', 'medium', 'high'],
-+    reasoningEffort: 'high',
++    reasoningEffort: 'low',
 +    supportsTemperature: true,
 +    defaultTemperature: 1,
 +    inputPrice: 0,
@@ -141,7 +140,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    supportsPromptCache: true,
 +    defaultToolProtocol: 'xml',
 +    supportsReasoningEffort: ['low', 'high'],
-+    reasoningEffort: 'high',
++    reasoningEffort: 'low',
 +    supportsTemperature: true,
 +    defaultTemperature: 1,
 +    inputPrice: 0,
@@ -154,7 +153,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    supportsPromptCache: true,
 +    defaultToolProtocol: 'xml',
 +    supportsReasoningEffort: ['minimal', 'low', 'medium', 'high'],
-+    reasoningEffort: 'high',
++    reasoningEffort: 'low',
 +    supportsTemperature: true,
 +    defaultTemperature: 1,
 +    inputPrice: 0,
@@ -248,6 +247,8 @@ file src/api/providers/gemini-cli.ts
 +import { OAuth2Client } from 'google-auth-library';
 +import { homedir } from 'node:os';
 +import { dirname, join } from 'node:path';
++import { createInterface } from 'node:readline';
++import { Readable } from 'node:stream';
 +import { convertAnthropicMessageToGemini } from '../transform/gemini-format';
 +import { getModelParams } from '../transform/model-params';
 +import { BaseProvider } from './base-provider';
@@ -255,15 +256,13 @@ file src/api/providers/gemini-cli.ts
 +import type { Anthropic } from '@anthropic-ai/sdk';
 +import type { GeminiCliModelId } from '@roo-code/types';
 +import type { ApiHandlerOptions } from '../../shared/api';
-+import type { ApiHandlerCreateMessageMetadata, SingleCompletionHandler } from '../index';
++import type { SingleCompletionHandler } from '../index';
 +import type { ApiStream } from '../transform/stream';
 +
-+const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
-+const CODE_ASSIST_API_VERSION = 'v1internal';
++const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com/v1internal';
 +const OAUTH_CLIENT_ID = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
 +const OAUTH_CLIENT_SECRET = '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';
 +const OAUTH_REDIRECT_URI = 'http://localhost:45289';
-+const TOKEN_EXPIRY_BUFFER_MS = 60_000;
 +
 +interface OAuthCredentials {
 +  readonly access_token: string;
@@ -286,25 +285,13 @@ file src/api/providers/gemini-cli.ts
 +    this.credPath = options.geminiCliOAuthPath || join(homedir(), '.gemini', 'oauth_creds.json');
 +  }
 +
-+  public async *createMessage(
-+    systemInstruction: string,
-+    messages: Anthropic.Messages.MessageParam[],
-+    metadata?: ApiHandlerCreateMessageMetadata,
-+  ): ApiStream {
++  public async *createMessage(systemInstruction: string, messages: Anthropic.Messages.MessageParam[]): ApiStream {
 +    const { id: model, info, reasoning: thinkingConfig, maxTokens } = this.getModel();
 +
 +    const isHybridReasoningModel = info.supportsReasoningBudget || info.requiredReasoningBudget;
 +    const maxOutputTokens = isHybridReasoningModel ? (this.options.modelMaxTokens ?? maxTokens ?? undefined) : (maxTokens ?? undefined);
 +
-+    const geminiMessages = messages.filter((message): message is Anthropic.Messages.MessageParam => {
-+      const meta = message as { type?: string };
-+      if (meta.type === 'reasoning') {
-+        return false;
-+      }
-+      return true;
-+    });
-+
-+    const contents = geminiMessages.map((message) => convertAnthropicMessageToGemini(message)).flat();
++    const contents = messages.map((message) => convertAnthropicMessageToGemini(message));
 +
 +    const supportsTemperature = info.supportsTemperature !== false;
 +    const temperatureConfig: number | undefined = supportsTemperature
@@ -335,10 +322,10 @@ file src/api/providers/gemini-cli.ts
 +
 +    const controller = new AbortController();
 +    const result = await this.authClient.request({
-+      url: this.getApiUrl('streamGenerateContent'),
 +      method: 'POST',
-+      params: { alt: 'sse' },
++      url: this.getApiUrl('streamGenerateContent'),
 +      headers: { 'Content-Type': 'application/json' },
++      params: { alt: 'sse' },
 +      responseType: 'stream',
 +      data: requestBody,
 +      signal: controller.signal,
@@ -349,17 +336,17 @@ file src/api/providers/gemini-cli.ts
 +    try {
 +      const stream = this.parseSSEStream(result.data as NodeJS.ReadableStream);
 +      for await (const jsonData of stream) {
-+        const response = jsonData.response || jsonData;
++        const response = jsonData.response;
 +        const candidate = response.candidates?.[0];
 +
 +        if (candidate?.content?.parts) {
 +          for (const part of candidate.content.parts) {
-+            if (part.thought) {
-+              if (part.text) {
++            if (part.text) {
++              if (part.thought) {
 +                yield { type: 'reasoning', text: part.text };
++              } else {
++                yield { type: 'text', text: part.text };
 +              }
-+            } else if (part.text) {
-+              yield { type: 'text', text: part.text };
 +            }
 +          }
 +        }
@@ -403,9 +390,11 @@ file src/api/providers/gemini-cli.ts
 +    };
 +
 +    const result = await this.callEndpoint('generateContent', requestBody);
++    const response = result.response;
++    const candidate = response.candidates?.[0];
 +
 +    return (
-+      result.response.candidates?.[0]?.content?.parts
++      candidate?.content?.parts
 +        ?.filter((p: any) => p.text && !p.thought)
 +        ?.map((p: any) => p.text)
 +        ?.join('') || ''
@@ -420,7 +409,7 @@ file src/api/providers/gemini-cli.ts
 +  }
 +
 +  private getApiUrl(method: string): string {
-+    return `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:${method}`;
++    return `${CODE_ASSIST_ENDPOINT}:${method}`;
 +  }
 +
 +  private async ensureAuthenticated(): Promise<void> {
@@ -430,8 +419,7 @@ file src/api/providers/gemini-cli.ts
 +      this.authClient.setCredentials(this.credentials!);
 +    }
 +
-+    const isExpired = this.credentials!.expiry_date - TOKEN_EXPIRY_BUFFER_MS < Date.now();
-+    if (isExpired) {
++    if (this.credentials!.expiry_date - 60_000 < Date.now()) {
 +      const { credentials } = await this.authClient.refreshAccessToken();
 +      this.credentials = {
 +        access_token: credentials.access_token!,
@@ -475,48 +463,44 @@ file src/api/providers/gemini-cli.ts
 +      pluginType: 'GEMINI',
 +    };
 +
-+    try {
-+      const load = await this.callEndpoint('loadCodeAssist', {
-+        cloudaicompanionProject: this.projectId,
-+        metadata: { ...metadata, duetProject: this.projectId },
-+      });
-+      if (load.cloudaicompanionProject) {
-+        this.projectId = load.cloudaicompanionProject;
-+        return;
-+      }
-+
-+      const tierId = load.allowedTiers?.find((t: any) => t.isDefault)?.id || 'free-tier';
-+      let onboard = await this.callEndpoint('onboardUser', {
-+        tierId,
-+        cloudaicompanionProject: undefined,
-+        metadata,
-+      });
-+
-+      if (!onboard.done && onboard.name) {
-+        const operationName = onboard.name;
-+        while (!onboard.done) {
-+          await new Promise((f) => setTimeout(f, 5000));
-+          onboard = (
-+            await this.authClient.request({
-+              url: `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}/${operationName}`,
-+              method: 'GET',
-+              headers: { 'Content-Type': 'application/json' },
-+            })
-+          ).data;
-+        }
-+      }
-+
-+      this.projectId = onboard.response?.cloudaicompanionProject?.id;
-+    } catch (error: any) {
-+      throw new Error(`Gemini CLI discoverProjectId failed: ${error.response?.data || error.message}`);
++    const load = await this.callEndpoint('loadCodeAssist', {
++      cloudaicompanionProject: this.projectId,
++      metadata: { ...metadata, duetProject: this.projectId },
++    });
++    if (load.cloudaicompanionProject) {
++      this.projectId = load.cloudaicompanionProject;
++      return;
 +    }
++
++    const tierId = load.allowedTiers?.find((t: any) => t.isDefault)?.id || 'free-tier';
++    let onboard = await this.callEndpoint('onboardUser', {
++      tierId,
++      cloudaicompanionProject: undefined,
++      metadata,
++    });
++
++    if (!onboard.done && onboard.name) {
++      const operationName = onboard.name;
++      while (!onboard.done) {
++        await new Promise((f) => setTimeout(f, 5000));
++        onboard = (
++          await this.authClient.request({
++            method: 'GET',
++            url: `${CODE_ASSIST_ENDPOINT}/${operationName}`,
++            headers: { 'Content-Type': 'application/json' },
++          })
++        ).data;
++      }
++    }
++
++    this.projectId = onboard.response?.cloudaicompanionProject?.id;
 +  }
 +
 +  private async callEndpoint(method: string, data: any, retry = true): Promise<any> {
 +    try {
 +      const result = await this.authClient.request({
-+        url: this.getApiUrl(method),
 +        method: 'POST',
++        url: this.getApiUrl(method),
 +        headers: { 'Content-Type': 'application/json' },
 +        data,
 +      });
@@ -531,25 +515,21 @@ file src/api/providers/gemini-cli.ts
 +  }
 +
 +  private async *parseSSEStream(stream: NodeJS.ReadableStream): AsyncGenerator<any> {
-+    const decoder = new TextDecoder();
-+    let buffer = '';
++    const rl = createInterface({ input: Readable.from(stream), crlfDelay: Infinity });
 +
-+    for await (const chunk of stream) {
-+      buffer += decoder.decode(chunk as Buffer, { stream: true });
-+      let boundary = buffer.indexOf('\n');
++    const fullResponse: any[] = [];
++    let bufferedLines: string[] = [];
 +
-+      while (boundary !== -1) {
-+        const line = buffer.slice(0, boundary).trim();
-+        buffer = buffer.slice(boundary + 1);
++    for await (const line of rl) {
++      if (line.startsWith('data: ')) {
++        bufferedLines.push(line.slice(6).trim());
++      } else if (line === '') {
++        if (bufferedLines.length === 0) continue;
 +
-+        if (line.startsWith('data: ')) {
-+          const data = line.slice(6);
-+          if (data === '[DONE]') return;
-+          try {
-+            yield JSON.parse(data);
-+          } catch {}
-+        }
-+        boundary = buffer.indexOf('\n');
++        const data = JSON.parse(bufferedLines.join('\n'));
++        fullResponse.push(data);
++        yield data;
++        bufferedLines = [];
 +      }
 +    }
 +  }
