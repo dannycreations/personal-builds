@@ -263,6 +263,7 @@ file src/api/providers/gemini-cli.ts
 +const OAUTH_CLIENT_ID = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
 +const OAUTH_CLIENT_SECRET = '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';
 +const OAUTH_REDIRECT_URI = 'http://localhost:45289';
++const OAUTH_DEFAULT_PATH = join(homedir(), '.gemini', 'oauth_creds.json');
 +
 +interface OAuthCredentials {
 +  readonly access_token: string;
@@ -272,17 +273,17 @@ file src/api/providers/gemini-cli.ts
 +}
 +
 +export class GeminiCliHandler extends BaseProvider implements SingleCompletionHandler {
-+  protected options: ApiHandlerOptions;
-+  private authClient: OAuth2Client;
++  private readonly options: ApiHandlerOptions;
++  private readonly authClient: OAuth2Client;
++
++  private credPath: string = OAUTH_DEFAULT_PATH;
 +  private credentials?: OAuthCredentials;
 +  private projectId?: string;
-+  private readonly credPath: string;
 +
 +  public constructor(options: ApiHandlerOptions) {
 +    super();
 +    this.options = options;
 +    this.authClient = new OAuth2Client(OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, OAUTH_REDIRECT_URI);
-+    this.credPath = options.geminiCliOAuthPath || join(homedir(), '.gemini', 'oauth_creds.json');
 +  }
 +
 +  public async *createMessage(systemInstruction: string, messages: Anthropic.Messages.MessageParam[]): ApiStream {
@@ -414,6 +415,18 @@ file src/api/providers/gemini-cli.ts
 +
 +  private async ensureAuthenticated(): Promise<void> {
 +    if (!this.credentials) {
++      let geminiCliOAuthPath = this.options.geminiCliOAuthPath || process.env.GOOGLE_OAUTH_PATH;
++      if (!geminiCliOAuthPath) {
++        try {
++          const content = await readFile(join(dirname(OAUTH_DEFAULT_PATH), '.env'), 'utf-8');
++          const match = content.match(/GOOGLE_OAUTH_PATH=["']?([^"'\\r\\n\\s]+)["']?/);
++          const oauthPath = match ? match[1].trim() : '';
++          if (oauthPath) geminiCliOAuthPath = oauthPath;
++        } catch {}
++      }
++
++      this.credPath = geminiCliOAuthPath || OAUTH_DEFAULT_PATH;
++
 +      const data = await readFile(this.credPath, 'utf-8');
 +      this.credentials = JSON.parse(data);
 +      this.authClient.setCredentials(this.credentials!);
@@ -435,9 +448,9 @@ file src/api/providers/gemini-cli.ts
 +  private async discoverProjectId(): Promise<void> {
 +    if (this.projectId) return;
 +
-+    const projectIdOptions = this.options.geminiCliProjectId?.trim();
-+    if (projectIdOptions) {
-+      this.projectId = projectIdOptions;
++    const geminiCliProjectId = this.options.geminiCliProjectId?.trim();
++    if (geminiCliProjectId) {
++      this.projectId = geminiCliProjectId;
 +      return;
 +    }
 +
@@ -447,9 +460,8 @@ file src/api/providers/gemini-cli.ts
 +    }
 +
 +    try {
-+      const envPath = join(dirname(this.credPath), '.env');
-+      const content = await readFile(envPath, 'utf-8');
-+      const match = content.match(/GOOGLE_CLOUD_PROJECT=["']?([^"'\r\n\s]+)["']?/);
++      const content = await readFile(join(dirname(this.credPath), '.env'), 'utf-8');
++      const match = content.match(/GOOGLE_CLOUD_PROJECT=["']?([^"'\\r\\n\\s]+)["']?/);
 +      const projectId = match ? match[1].trim() : '';
 +      if (projectId) {
 +        this.projectId = projectId;
@@ -517,7 +529,7 @@ file src/api/providers/gemini-cli.ts
 +  private async *parseSSEStream(stream: NodeJS.ReadableStream): AsyncGenerator<any> {
 +    const rl = createInterface({ input: Readable.from(stream), crlfDelay: Infinity });
 +
-+    const fullResponse: any[] = [];
++    const fullResponse: unknown[] = [];
 +    let bufferedLines: string[] = [];
 +
 +    for await (const line of rl) {

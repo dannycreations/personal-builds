@@ -56,7 +56,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +import { Env } from "@/env"
 +import {
 +  type LanguageModelV2,
-+  type LanguageModelV2Content,
 +  type LanguageModelV2FinishReason,
 +  type LanguageModelV2Prompt,
 +  type LanguageModelV2ToolChoice,
@@ -69,7 +68,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  postJsonToApi,
 +  type FetchFunction,
 +} from "@ai-sdk/provider-utils"
-+import { writeFileSync } from "node:fs"
 +import { arch, homedir, platform } from "node:os"
 +import { dirname, join } from "node:path"
 +import { z } from "zod/v4"
@@ -94,10 +92,10 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +}
 +
 +export class GeminiCliProvider implements LanguageModelV2 {
-+  readonly specificationVersion = "v2"
-+  readonly provider = "gemini-cli"
-+  readonly modelId: string
-+  readonly supportedUrls = {}
++  public readonly specificationVersion = "v2"
++  public readonly provider = "gemini-cli"
++  public readonly modelId: string
++  public readonly supportedUrls = {}
 +
 +  private readonly config: GeminiCliProviderConfig
 +
@@ -105,7 +103,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  private credentials?: OAuthCredentials
 +  private projectId?: string
 +  private turnCount = 0
-+  private debugCounter = 0
 +
 +  public constructor(modelId: string, config: GeminiCliProviderConfig) {
 +    this.modelId = modelId
@@ -117,10 +114,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  ): Promise<Awaited<ReturnType<LanguageModelV2["doGenerate"]>>> {
 +    const { headers, body } = await this.prepareRequest(options)
 +
-+    const id = ++this.debugCounter
-+    writeFileSync(join(process.cwd(), "debug", `doGenerate-request-raw-${id}.json`), JSON.stringify(options, null, 2))
-+    writeFileSync(join(process.cwd(), "debug", `doGenerate-request-map-${id}.json`), JSON.stringify(body, null, 2))
-+
 +    const { value: responseBody } = await postJsonToApi({
 +      url: `${this.config.baseURL}:generateContent`,
 +      headers,
@@ -129,63 +122,23 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +      successfulResponseHandler: createJsonResponseHandler(z.any()),
 +      abortSignal: options.abortSignal,
 +      fetch: this.config.fetch,
-+    }).catch((error) => {
-+      writeFileSync(
-+        join(process.cwd(), "debug", `doGenerate-response-error-${id}.json`),
-+        JSON.stringify(error, null, 2),
-+      )
-+      throw error
 +    })
-+
-+    writeFileSync(
-+      join(process.cwd(), "debug", `doGenerate-response-success-${id}.json`),
-+      JSON.stringify(responseBody, null, 2),
-+    )
 +
 +    const response = responseBody.response
 +    const candidate = response.candidates?.[0]
-+    const content: LanguageModelV2Content[] = []
-+
-+    if (candidate?.content?.parts) {
-+      for (const part of candidate.content.parts) {
-+        if (part.text) {
-+          if (part.thought) {
-+            content.push({ type: "reasoning", text: part.text })
-+          } else {
-+            content.push({ type: "text", text: part.text })
-+          }
-+        }
-+        if (part.functionCall) {
-+          content.push({
-+            type: "tool-call",
-+            toolCallId: generateId(),
-+            toolName: part.functionCall.name,
-+            input: JSON.stringify(part.functionCall.args),
-+          })
-+        }
-+      }
-+    }
-+
-+    let finishReason: LanguageModelV2FinishReason = "unknown"
-+    const reason = candidate?.finishReason
-+    if (reason === "STOP") finishReason = "stop"
-+    else if (reason === "MAX_TOKENS") finishReason = "length"
-+    else if (reason === "SAFETY") finishReason = "content-filter"
-+    else if (reason === "RECITATION") finishReason = "content-filter"
-+    else if (reason === "OTHER") finishReason = "other"
-+
-+    if (content.some((c) => c.type === "tool-call")) {
-+      finishReason = "tool-calls"
-+    }
++    const usage = response.usageMetadata
 +
 +    return {
-+      content,
-+      finishReason,
++      content:
++        candidate?.content?.parts
++          ?.filter((p: any) => p.text && !p.thought)
++          ?.map((p: any) => p.text)
++          ?.join("") || "",
++      finishReason: candidate?.finishReason,
 +      usage: {
-+        inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
-+        outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
-+        totalTokens:
-+          (response.usageMetadata?.promptTokenCount ?? 0) + (response.usageMetadata?.candidatesTokenCount ?? 0),
++        inputTokens: usage?.promptTokenCount ?? 0,
++        outputTokens: usage?.candidatesTokenCount ?? 0,
++        totalTokens: usage?.totalTokenCount ?? 0,
 +      },
 +      warnings: [],
 +    }
@@ -196,10 +149,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  ): Promise<Awaited<ReturnType<LanguageModelV2["doStream"]>>> {
 +    const { headers, body } = await this.prepareRequest(options)
 +
-+    const id = ++this.debugCounter
-+    writeFileSync(join(process.cwd(), "debug", `doStream-request-raw-${id}.json`), JSON.stringify(options, null, 2))
-+    writeFileSync(join(process.cwd(), "debug", `doStream-request-map-${id}.json`), JSON.stringify(body, null, 2))
-+
 +    const { value: stream } = await postJsonToApi({
 +      url: `${this.config.baseURL}:streamGenerateContent?alt=sse`,
 +      headers,
@@ -208,9 +157,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +      successfulResponseHandler: createEventSourceResponseHandler(z.any()),
 +      abortSignal: options.abortSignal,
 +      fetch: this.config.fetch,
-+    }).catch((error) => {
-+      writeFileSync(join(process.cwd(), "debug", `doStream-response-error-${id}.json`), JSON.stringify(error, null, 2))
-+      throw error
 +    })
 +
 +    let finishReason: LanguageModelV2FinishReason = "unknown"
@@ -219,8 +165,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +    let activeText: string | null = null
 +    let activeToolCall: string | null = null
 +
-+    let chunks: any[] = []
-+
++    const self = this
 +    return {
 +      stream: stream.pipeThrough(
 +        new TransformStream({
@@ -228,7 +173,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +            controller.enqueue({ type: "stream-start", warnings: [] })
 +          },
 +          transform(chunk, controller) {
-+            chunks.push(chunk)
 +            if (!chunk.success) {
 +              controller.enqueue({ type: "error", error: chunk.error })
 +              return
@@ -255,11 +199,23 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +                  }
 +                } else if (part.functionCall) {
 +                  activeToolCall = generateId()
++                  const toolName = part.functionCall.name
++                  const input = JSON.stringify(part.functionCall.args)
++
++                  controller.enqueue({
++                    type: "tool-input-start",
++                    id: activeToolCall,
++                    toolName,
++                  })
++
 +                  controller.enqueue({
 +                    type: "tool-call",
 +                    toolCallId: activeToolCall,
-+                    toolName: part.functionCall.name,
-+                    input: JSON.stringify(part.functionCall.args),
++                    toolName,
++                    input,
++                    providerMetadata: part.thoughtSignature
++                      ? { [self.provider]: { thoughtSignature: part.thoughtSignature } }
++                      : undefined,
 +                  })
 +                }
 +              }
@@ -281,10 +237,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +            }
 +          },
 +          flush(controller) {
-+            writeFileSync(
-+              join(process.cwd(), "debug", `doStream-response-success-${id}.json`),
-+              JSON.stringify(chunks, null, 2),
-+            )
 +            if (activeReasoning) {
 +              controller.enqueue({ type: "reasoning-end", id: activeReasoning })
 +              activeReasoning = null
@@ -293,7 +245,10 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +              controller.enqueue({ type: "text-end", id: activeText })
 +              activeText = null
 +            }
-+            activeToolCall = null
++            if (activeToolCall) {
++              controller.enqueue({ type: "tool-input-end", id: activeToolCall })
++              activeToolCall = null
++            }
 +
 +            controller.enqueue({
 +              type: "finish",
@@ -301,7 +256,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +              usage: {
 +                inputTokens: usage?.promptTokenCount ?? 0,
 +                outputTokens: usage?.candidatesTokenCount ?? 0,
-+                totalTokens: (usage?.promptTokenCount ?? 0) + (usage?.candidatesTokenCount ?? 0),
++                totalTokens: usage?.totalTokenCount ?? 0,
 +              },
 +            })
 +          },
@@ -316,8 +271,9 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +      if (!geminiCliOAuthPath) {
 +        try {
 +          const content = await Bun.file(join(dirname(OAUTH_DEFAULT_PATH), ".env")).text()
-+          const match = content.match(/GOOGLE_OAUTH_PATH=["']?([^"'\r\n\s]+)["']?/)
-+          if (match?.[1]) geminiCliOAuthPath = match[1].trim()
++          const match = content.match(/GOOGLE_OAUTH_PATH=["']?([^"'\\r\\n\\s]+)["']?/)
++          const oauthPath = match ? match[1].trim() : ""
++          if (oauthPath) geminiCliOAuthPath = oauthPath
 +        } catch {}
 +      }
 +
@@ -376,9 +332,10 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +
 +    try {
 +      const content = await Bun.file(join(dirname(this.credPath), ".env")).text()
-+      const match = content.match(/GOOGLE_CLOUD_PROJECT=["']?([^"'\r\n\s]+)["']?/)
-+      if (match?.[1]) {
-+        this.projectId = match[1].trim()
++      const match = content.match(/GOOGLE_CLOUD_PROJECT=["']?([^"'\\r\\n\\s]+)["']?/)
++      const projectId = match ? match[1].trim() : ""
++      if (projectId) {
++        this.projectId = projectId
 +        return
 +      }
 +    } catch {}
@@ -442,11 +399,11 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +    await this.ensureAuthenticated()
 +    await this.discoverProjectId()
 +
-+    const geminiOptions = options.providerOptions?.["gemini-cli"]
++    const geminiOptions = options.providerOptions?.[this.provider]
 +    const sessionId = geminiOptions?.session_id
 +    const userPromptId = sessionId ? `${sessionId}########${++this.turnCount}` : undefined
-+    const { systemInstruction, contents } = mapPromptToGemini(options.prompt)
-+    const toolSettings = mapToolsToGemini(options.tools, options.toolChoice)
++    const { systemInstruction, contents } = this.mapPromptToGemini(options.prompt)
++    const toolSettings = this.mapToolsToGemini(options.tools, options.toolChoice)
 +
 +    const body = {
 +      model: this.modelId,
@@ -456,6 +413,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +        systemInstruction,
 +        contents,
 +        ...(toolSettings?.tools ? { tools: toolSettings.tools } : {}),
++        ...(toolSettings?.toolConfig ? { toolConfig: toolSettings.toolConfig } : {}),
 +        generationConfig: {
 +          ...(options.temperature != null ? { temperature: options.temperature } : {}),
 +          ...(options.topP != null ? { topP: options.topP } : {}),
@@ -477,92 +435,90 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +
 +    return { headers, body }
 +  }
-+}
 +
-+function mapPromptToGemini(prompt: LanguageModelV2Prompt): {
-+  systemInstruction?: any
-+  contents: any[]
-+} {
-+  let systemInstruction: any = undefined
-+  const contents: any[] = []
++  private mapPromptToGemini(prompt: LanguageModelV2Prompt) {
++    let systemInstruction: any = undefined
++    const contents: any[] = []
 +
-+  for (const message of prompt) {
-+    if (message.content.length < 1) continue
++    for (const message of prompt) {
++      if (message.content.length < 1) continue
 +
-+    if (message.role === "system") {
-+      systemInstruction = {
-+        role: "user",
-+        parts: [{ text: message.content }],
++      if (message.role === "system") {
++        systemInstruction = {
++          role: "user",
++          parts: [{ text: message.content }],
++        }
++        continue
 +      }
-+      continue
-+    }
 +
-+    const role = message.role === "assistant" ? "model" : "user"
-+    const parts: any[] = []
++      const role = message.role === "assistant" ? "model" : "user"
++      const parts: unknown[] = []
 +
-+    for (const part of message.content) {
-+      if (part.type === "text") {
-+        parts.push({ text: part.text })
-+      } else if (part.type === "tool-call") {
-+        parts.push({
-+          functionCall: {
-+            name: part.toolName,
-+            args: (part as any).args,
-+          },
-+          thoughtSignature: "skip_thought_signature_validator",
-+        })
-+      } else if (part.type === "tool-result") {
-+        parts.push({
-+          functionResponse: {
-+            id: part.toolCallId,
-+            name: part.toolName,
-+            response: { output: JSON.stringify((part as any).result) },
-+          },
-+        })
-+      }
-+    }
-+
-+    contents.push({ role, parts })
-+  }
-+
-+  return { systemInstruction, contents }
-+}
-+
-+function mapToolsToGemini(tools?: any[], toolChoice?: LanguageModelV2ToolChoice): { tools?: any[]; toolConfig?: any } {
-+  if (!tools || tools.length === 0) return {}
-+
-+  const functionDeclarations = tools
-+    .map((tool) => {
-+      if (tool.type === "function") {
-+        return {
-+          name: tool.name,
-+          description: tool.description ?? "",
-+          parametersJsonSchema: tool.inputSchema,
++      for (const part of message.content) {
++        if (part.type === "text") {
++          parts.push({ text: part.text })
++        } else if (part.type === "tool-call") {
++          const thoughtSignature = part.providerOptions?.[this.provider]?.thoughtSignature
++          parts.push({
++            functionCall: {
++              name: part.toolName,
++              args: part.input,
++            },
++            thoughtSignature: thoughtSignature ?? "skip_thought_signature_validator",
++          })
++        } else if (part.type === "tool-result") {
++          parts.push({
++            functionResponse: {
++              id: part.toolCallId,
++              name: part.toolName,
++              response: { output: part.output.value },
++            },
++          })
 +        }
 +      }
-+      return undefined
-+    })
-+    .filter(Boolean)
 +
-+  const mappedTools = [{ functionDeclarations }]
-+
-+  let toolConfig: any = undefined
-+  if (toolChoice) {
-+    if (toolChoice.type === "auto") {
-+      toolConfig = { functionCallingConfig: { mode: "AUTO" } }
-+    } else if (toolChoice.type === "required") {
-+      toolConfig = { functionCallingConfig: { mode: "ANY" } }
-+    } else if (toolChoice.type === "tool") {
-+      toolConfig = {
-+        functionCallingConfig: {
-+          mode: "ANY",
-+          allowedFunctionNames: [toolChoice.toolName],
-+        },
-+      }
++      contents.push({ role, parts })
 +    }
++
++    return { systemInstruction, contents }
 +  }
 +
-+  return { tools: mappedTools, toolConfig }
++  private mapToolsToGemini(tools?: any[], toolChoice?: LanguageModelV2ToolChoice) {
++    if (!tools || tools.length === 0) return {}
++
++    const functionDeclarations = tools
++      .map((tool) => {
++        if (tool.type === "function") {
++          return {
++            name: tool.name,
++            description: tool.description ?? "",
++            parametersJsonSchema: tool.inputSchema,
++          }
++        }
++        return undefined
++      })
++      .filter(Boolean)
++
++    const mappedTools = [{ functionDeclarations }]
++
++    let toolConfig: any = undefined
++    if (toolChoice) {
++      if (toolChoice.type === "auto") {
++        toolConfig = { functionCallingConfig: { mode: "AUTO" } }
++      } else if (toolChoice.type === "required") {
++        toolConfig = { functionCallingConfig: { mode: "ANY" } }
++      } else if (toolChoice.type === "tool") {
++        toolConfig = {
++          functionCallingConfig: {
++            mode: "ANY",
++            allowedFunctionNames: [toolChoice.toolName],
++          },
++        }
++      }
++    }
++
++    return { tools: mappedTools, toolConfig }
++  }
 +}
 
 file packages/opencode/src/provider/sdk/gemini-cli/index.ts
@@ -586,9 +542,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +      reasoning: true,
 +      temperature: true,
 +      tool_call: true,
-+      interleaved: {
-+        field: "reasoning_content",
-+      },
 +      limit: {
 +        context: 1_048_576,
 +        output: 65_536,
@@ -597,7 +550,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +        input: ["text", "image"],
 +        output: ["text"],
 +      },
-+      options: {},
 +    },
 +    "gemini-3-pro-preview": {
 +      id: "gemini-3-pro-preview",
@@ -607,9 +559,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +      reasoning: true,
 +      temperature: true,
 +      tool_call: true,
-+      interleaved: {
-+        field: "reasoning_content",
-+      },
 +      limit: {
 +        context: 1_048_576,
 +        output: 65_536,
@@ -618,7 +567,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +        input: ["text", "image"],
 +        output: ["text"],
 +      },
-+      options: {},
 +    },
 +    "gemini-3-flash-preview": {
 +      id: "gemini-3-flash-preview",
@@ -628,9 +576,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +      reasoning: true,
 +      temperature: true,
 +      tool_call: true,
-+      interleaved: {
-+        field: "reasoning_content",
-+      },
 +      limit: {
 +        context: 1_048_576,
 +        output: 65_536,
@@ -639,7 +584,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +        input: ["text", "image"],
 +        output: ["text"],
 +      },
-+      options: {},
 +    },
 +    "gemini-2.5-pro": {
 +      id: "gemini-2.5-pro",
@@ -649,9 +593,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +      reasoning: true,
 +      temperature: true,
 +      tool_call: true,
-+      interleaved: {
-+        field: "reasoning_content",
-+      },
 +      limit: {
 +        context: 1_048_576,
 +        output: 64_000,
@@ -660,7 +601,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +        input: ["text", "image"],
 +        output: ["text"],
 +      },
-+      options: {},
 +    },
 +    "gemini-2.5-flash": {
 +      id: "gemini-2.5-flash",
@@ -670,9 +610,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +      reasoning: true,
 +      temperature: true,
 +      tool_call: true,
-+      interleaved: {
-+        field: "reasoning_content",
-+      },
 +      limit: {
 +        context: 1_048_576,
 +        output: 64_000,
@@ -681,7 +618,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +        input: ["text", "image"],
 +        output: ["text"],
 +      },
-+      options: {},
 +    },
 +    "gemini-2.5-flash-lite": {
 +      id: "gemini-2.5-flash-lite",
@@ -691,9 +627,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +      reasoning: true,
 +      temperature: true,
 +      tool_call: true,
-+      interleaved: {
-+        field: "reasoning_content",
-+      },
 +      limit: {
 +        context: 1_048_576,
 +        output: 64_000,
@@ -702,7 +635,6 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +        input: ["text", "image"],
 +        output: ["text"],
 +      },
-+      options: {},
 +    },
 +  },
 +} as const
