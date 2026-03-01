@@ -1,6 +1,8 @@
 name: Kilocode
 
 on:
+  schedule:
+    - cron: '0 11 * * *'
   workflow_dispatch:
 
 concurrency:
