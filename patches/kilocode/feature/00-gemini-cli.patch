@@ -457,6 +457,13 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +      for (const part of message.content) {
 +        if (part.type === "text") {
 +          parts.push({ text: part.text })
++        } else if (part.type === "file") {
++          parts.push({
++            inlineData: {
++              mimeType: part.mediaType,
++              data: part.data,
++            },
++          })
 +        } else if (part.type === "tool-call") {
 +          const thoughtSignature = part.providerOptions?.[this.provider]?.thoughtSignature
 +          parts.push({
