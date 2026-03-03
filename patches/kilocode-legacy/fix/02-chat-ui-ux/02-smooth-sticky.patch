@@ -62,8 +62,3 @@ label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatV
  									// Only show the scroll-to-bottom button if not at bottom
  									setShowScrollToBottom(!isAtBottom)
  								}}
--								atBottomThreshold={10}
-+								atBottomThreshold={5}
- 								initialTopMostItemIndex={groupedMessages.length - 1}
- 							/>
- 						</div>

@@ -125,6 +125,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
++    supportsNativeTools: true,
 +    defaultToolProtocol: 'xml',
 +    supportsReasoningEffort: ['low', 'medium', 'high'],
 +    reasoningEffort: 'low',
@@ -138,6 +139,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
++    supportsNativeTools: true,
 +    defaultToolProtocol: 'xml',
 +    supportsReasoningEffort: ['low', 'high'],
 +    reasoningEffort: 'low',
@@ -151,6 +153,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
++    supportsNativeTools: true,
 +    defaultToolProtocol: 'xml',
 +    supportsReasoningEffort: ['minimal', 'low', 'medium', 'high'],
 +    reasoningEffort: 'low',
@@ -164,6 +167,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
++    supportsNativeTools: false,
 +    defaultToolProtocol: 'xml',
 +    supportsReasoningBudget: true,
 +    requiredReasoningBudget: true,
@@ -176,6 +180,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
++    supportsNativeTools: false,
 +    defaultToolProtocol: 'xml',
 +    supportsReasoningBudget: true,
 +    requiredReasoningBudget: true,
@@ -188,6 +193,7 @@ file packages/types/src/providers/gemini-cli.ts
 +    contextWindow: 1_048_576,
 +    supportsImages: true,
 +    supportsPromptCache: true,
++    supportsNativeTools: false,
 +    defaultToolProtocol: 'xml',
 +    supportsReasoningBudget: true,
 +    requiredReasoningBudget: true,
@@ -242,6 +248,7 @@ label export function buildApiHandler(configuration: ProviderSettings): ApiHandl
 
 file src/api/providers/gemini-cli.ts
 
++import { FunctionCallingConfigMode } from '@google/genai';
 +import { geminiCliDefaultModelId, geminiCliModels } from '@roo-code/types';
 +import { readFile, writeFile } from 'fs/promises';
 +import { OAuth2Client } from 'google-auth-library';
@@ -256,7 +263,7 @@ file src/api/providers/gemini-cli.ts
 +import type { Anthropic } from '@anthropic-ai/sdk';
 +import type { GeminiCliModelId } from '@roo-code/types';
 +import type { ApiHandlerOptions } from '../../shared/api';
-+import type { SingleCompletionHandler } from '../index';
++import type { ApiHandlerCreateMessageMetadata, SingleCompletionHandler } from '../index';
 +import type { ApiStream } from '../transform/stream';
 +
 +const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com/v1internal';
@@ -279,6 +286,8 @@ file src/api/providers/gemini-cli.ts
 +  private credPath: string = OAUTH_DEFAULT_PATH;
 +  private credentials?: OAuthCredentials;
 +  private projectId?: string;
++  private lastResponseId?: string;
++  private lastThoughtSignature?: string;
 +
 +  public constructor(options: ApiHandlerOptions) {
 +    super();
@@ -286,13 +295,44 @@ file src/api/providers/gemini-cli.ts
 +    this.authClient = new OAuth2Client(OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, OAUTH_REDIRECT_URI);
 +  }
 +
-+  public async *createMessage(systemInstruction: string, messages: Anthropic.Messages.MessageParam[]): ApiStream {
++  public async *createMessage(
++    systemInstruction: string,
++    messages: Anthropic.Messages.MessageParam[],
++    metadata?: ApiHandlerCreateMessageMetadata,
++  ): ApiStream {
 +    const { id: model, info, reasoning: thinkingConfig, maxTokens } = this.getModel();
++    this.lastThoughtSignature = undefined;
++    this.lastResponseId = undefined;
 +
 +    const isHybridReasoningModel = info.supportsReasoningBudget || info.requiredReasoningBudget;
 +    const maxOutputTokens = isHybridReasoningModel ? (this.options.modelMaxTokens ?? maxTokens ?? undefined) : (maxTokens ?? undefined);
 +
-+    const contents = messages.map((message) => convertAnthropicMessageToGemini(message));
++    const usingNativeTools = Boolean(metadata?.tools && metadata.tools.length > 0);
++    const includeThoughtSignatures = Boolean(thinkingConfig) || usingNativeTools;
++
++    const toolIdToName = new Map<string, string>();
++    for (const message of messages) {
++      if (Array.isArray(message.content)) {
++        for (const block of message.content) {
++          if (block.type === 'tool_use') {
++            toolIdToName.set(block.id, block.name);
++          }
++        }
++      }
++    }
++
++    const contents = messages.map((message) => convertAnthropicMessageToGemini(message, { includeThoughtSignatures, toolIdToName })).flat();
++
++    const tools: any[] = [];
++    if (metadata?.tools && metadata.tools.length > 0) {
++      tools.push({
++        functionDeclarations: metadata.tools.map((tool) => ({
++          name: (tool as any).function.name,
++          description: (tool as any).function.description,
++          parameters: (tool as any).function.parameters,
++        })),
++      });
++    }
 +
 +    const supportsTemperature = info.supportsTemperature !== false;
 +    const temperatureConfig: number | undefined = supportsTemperature
@@ -302,7 +342,50 @@ file src/api/providers/gemini-cli.ts
 +    await this.ensureAuthenticated();
 +    await this.discoverProjectId();
 +
-+    const requestBody: any = {
++    const config: any = {
++      generationConfig: {
++        temperature: temperatureConfig,
++        topP: 0.95,
++        topK: 64,
++        maxOutputTokens,
++        ...(thinkingConfig ? { thinkingConfig } : {}),
++      },
++    };
++
++    if (metadata?.allowedFunctionNames && metadata.allowedFunctionNames.length > 0) {
++      config.toolConfig = {
++        functionCallingConfig: {
++          mode: FunctionCallingConfigMode.ANY,
++          allowedFunctionNames: metadata.allowedFunctionNames,
++        },
++      };
++    } else if (metadata?.tool_choice) {
++      const choice = metadata.tool_choice;
++      let mode: FunctionCallingConfigMode;
++      let allowedFunctionNames: string[] | undefined;
++
++      if (choice === 'auto') {
++        mode = FunctionCallingConfigMode.AUTO;
++      } else if (choice === 'none') {
++        mode = FunctionCallingConfigMode.NONE;
++      } else if (choice === 'required') {
++        mode = FunctionCallingConfigMode.ANY;
++      } else if (typeof choice === 'object' && 'function' in choice && choice.type === 'function') {
++        mode = FunctionCallingConfigMode.ANY;
++        allowedFunctionNames = [choice.function.name];
++      } else {
++        mode = FunctionCallingConfigMode.AUTO;
++      }
++
++      config.toolConfig = {
++        functionCallingConfig: {
++          mode,
++          ...(allowedFunctionNames ? { allowedFunctionNames } : {}),
++        },
++      };
++    }
++
++    const requestBody = {
 +      model,
 +      project: this.projectId,
 +      request: {
@@ -311,13 +394,8 @@ file src/api/providers/gemini-cli.ts
 +          parts: [{ text: systemInstruction }],
 +        },
 +        contents,
-+        generationConfig: {
-+          temperature: temperatureConfig,
-+          topP: 0.95,
-+          topK: 64,
-+          maxOutputTokens,
-+          ...(thinkingConfig ? { thinkingConfig } : {}),
-+        },
++        ...config,
++        ...(tools.length > 0 ? { tools } : {}),
 +      },
 +    };
 +
@@ -333,26 +411,59 @@ file src/api/providers/gemini-cli.ts
 +    });
 +
 +    let lastUsage: any;
++    let toolCallCounter = 0;
 +
 +    try {
 +      const stream = this.parseSSEStream(result.data as NodeJS.ReadableStream);
 +      for await (const jsonData of stream) {
 +        const response = jsonData.response;
++        if (response?.responseId) {
++          this.lastResponseId = response.responseId;
++        }
++
 +        const candidate = response.candidates?.[0];
 +
 +        if (candidate?.content?.parts) {
 +          for (const part of candidate.content.parts) {
++            if (part.thoughtSignature && includeThoughtSignatures) {
++              this.lastThoughtSignature = part.thoughtSignature;
++            }
++
 +            if (part.text) {
 +              if (part.thought) {
 +                yield { type: 'reasoning', text: part.text };
 +              } else {
 +                yield { type: 'text', text: part.text };
 +              }
++            } else if (part.functionCall) {
++              const callId = `${part.functionCall.name}-${toolCallCounter}`;
++              const args = JSON.stringify(part.functionCall.args);
++
++              yield {
++                type: 'tool_call_partial',
++                index: toolCallCounter,
++                id: callId,
++                name: part.functionCall.name,
++                arguments: undefined,
++              };
++
++              yield {
++                type: 'tool_call_partial',
++                index: toolCallCounter,
++                id: callId,
++                name: undefined,
++                arguments: args,
++              };
++
++              toolCallCounter++;
 +            }
 +          }
 +        }
 +        if (response.usageMetadata) lastUsage = response.usageMetadata;
-+        if (candidate?.finishReason) break;
++        if (candidate?.finishReason) {
++          if (candidate.finishMessage) yield { type: 'text', text: candidate.finishMessage };
++          break;
++        }
 +      }
 +    } finally {
 +      controller.abort();
@@ -406,7 +517,25 @@ file src/api/providers/gemini-cli.ts
 +    const modelId = this.options.apiModelId?.replace(':thinking', '') || geminiCliDefaultModelId;
 +    const id = (modelId in geminiCliModels ? modelId : geminiCliDefaultModelId) as GeminiCliModelId;
 +    const info = geminiCliModels[id];
-+    return { id, info, ...getModelParams({ format: 'gemini', modelId: id, model: info, settings: this.options }) };
++    return {
++      id,
++      info,
++      ...getModelParams({
++        format: 'gemini',
++        modelId: id,
++        model: info,
++        settings: this.options,
++        defaultTemperature: info.defaultTemperature ?? 1,
++      }),
++    };
++  }
++
++  public getThoughtSignature(): string | undefined {
++    return this.lastThoughtSignature;
++  }
++
++  public getResponseId(): string | undefined {
++    return this.lastResponseId;
 +  }
 +
 +  private getApiUrl(method: string): string {
@@ -557,6 +686,98 @@ label export { UnboundHandler } from "./unbound"
  export { VirtualQuotaFallbackHandler } from "./virtual-quota-fallback"
  export { SyntheticHandler } from "./synthetic"
  export { InceptionLabsHandler } from "./inception"
+
+file src/api/transform/gemini-format.ts
+label export function convertAnthropicContentToGemini(
+
+ 				}
+ 
+ 				if (typeof block.content === "string") {
+-					return {
+-						functionResponse: { name: toolName, response: { name: toolName, content: block.content } },
++					const envTag = "<environment_details>"
++					const envIndex = block.content.indexOf(envTag)
++					if (envIndex !== -1) {
++						const toolOutput = block.content.slice(0, envIndex).trim()
++						const envDetails = block.content.slice(envIndex).trim()
++						return [
++							{
++								functionResponse: {
++									name: toolName,
++									id: block.tool_use_id,
++									response: { output: toolOutput || "(tool output)" },
++								},
++							},
++							{ text: envDetails },
++						] as Part[]
+ 					}
++					return {
++						functionResponse: {
++							name: toolName,
++							id: block.tool_use_id,
++							response: { output: block.content },
++						},
++					} as Part
+ 				}
+ 
+ 				if (!Array.isArray(block.content)) {
+
+label export function convertAnthropicContentToGemini(
+
+ 				}
+ 
+ 				// Create content text with a note about images if present
+-				const contentText =
+-					textParts.join("\n\n") + (imageParts.length > 0 ? "\n\n(See next part for image)" : "")
++				const fullText = textParts.join("\n\n")
++				const envTag = "<environment_details>"
++				const envIndex = fullText.indexOf(envTag)
++
++				if (envIndex !== -1) {
++					const toolOutput = fullText.slice(0, envIndex).trim()
++					const envDetails = fullText.slice(envIndex).trim()
++					return [
++						{
++							functionResponse: {
++								id: block.tool_use_id,
++								name: toolName,
++								response: {
++									output: toolOutput + (imageParts.length > 0 ? "\n\n(See next part for image)" : ""),
++								},
++							},
++						},
++						{ text: envDetails },
++						...imageParts,
++					]
++				}
++
++				const contentText = fullText + (imageParts.length > 0 ? "\n\n(See next part for image)" : "")
+ 
+ 				// Return function response followed by any images
+ 				return [
+-					{ functionResponse: { name: toolName, response: { name: toolName, content: contentText } } },
++					{
++						functionResponse: {
++							id: block.tool_use_id,
++							name: toolName,
++							response: { output: contentText },
++						},
++					},
+ 					...imageParts,
+ 				]
+ 			}
+
+file src/core/task/Task.ts
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 		// but uses allowedFunctionNames to restrict which tools can be called.
+ 		// Other providers (Anthropic, OpenAI, etc.) don't support this feature yet,
+ 		// so they continue to receive only the filtered tools for the current mode.
+-		const supportsAllowedFunctionNames = apiConfiguration?.apiProvider === "gemini"
++		const supportsAllowedFunctionNames = apiConfiguration?.apiProvider === "gemini" || apiConfiguration?.apiProvider === "gemini-cli"
+ 
+ 		if (shouldIncludeTools) {
+ 			const provider = this.providerRef.deref()
 
 file src/shared/checkExistApiConfig.ts
 label export function checkExistKey(config: ProviderSettings | undefined) {

@@ -1,0 +1,300 @@
+file src/core/assistant-message/presentAssistantMessage.ts
+label export async function presentAssistantMessage(cline: Task) {
+
+ 				break
+ 			}
+ 
+-			if (cline.didAlreadyUseTool) {
+-				const toolCallId = mcpBlock.id
+-				const errorMessage = `MCP tool [${mcpBlock.name}] was not executed because a tool has already been used in this message. Only one tool may be used per message.`
+-
+-				if (toolCallId) {
+-					cline.pushToolResultToUserContent({
+-						type: "tool_result",
+-						tool_use_id: toolCallId,
+-						content: errorMessage,
+-						is_error: true,
+-					})
+-				}
+-				break
+-			}
+-
+ 			// Track if we've already pushed a tool result
+ 			let hasToolResult = false
+ 			const toolCallId = mcpBlock.id
+
+label export async function presentAssistantMessage(cline: Task) {
+
+ 				break
+ 			}
+ 
+-			if (cline.didAlreadyUseTool) {
+-				// Ignore any content after a tool has already been used.
+-				// For native protocol, we must send a tool_result for every tool_use to avoid API errors
+-				const toolCallId = block.id
+-				const errorMessage = `Tool [${block.name}] was not executed because a tool has already been used in this message. Only one tool may be used per message. You must assess the first tool's result before proceeding to use the next tool.`
+-
+-				if (toolCallId) {
+-					// Native protocol: MUST send tool_result for every tool_use
+-					cline.pushToolResultToUserContent({
+-						type: "tool_result",
+-						tool_use_id: toolCallId,
+-						content: errorMessage,
+-						is_error: true,
+-					})
+-				} else {
+-					// XML protocol: send as text
+-					cline.userMessageContent.push({
+-						type: "text",
+-						text: errorMessage,
+-					})
+-				}
+-
+-				break
+-			}
+-
+ 			// Track if we've already pushed a tool result for this tool call (native protocol only)
+ 			let hasToolResult = false
+ 
+ 			// Determine protocol by checking if this tool call has an ID.
+ 			// Native protocol tool calls ALWAYS have an ID (set when parsed from tool_call chunks).
+ 			// XML protocol tool calls NEVER have an ID (parsed from XML text).
+ 			const toolCallId = (block as any).id
+ 			const toolProtocol = toolCallId ? TOOL_PROTOCOL.NATIVE : TOOL_PROTOCOL.XML
+ 
+ 			// Multiple native tool calls feature is on hold - always disabled
+ 			// Previously resolved from experiments.isEnabled(..., EXPERIMENT_IDS.MULTIPLE_NATIVE_TOOL_CALLS)
+-			const isMultipleNativeToolCallsEnabled = false
++			const isMultipleNativeToolCallsEnabled = true // kilocode_change: enable multiple tool calls
+ 
+ 			// Store approval feedback to merge into tool result (GitHub #10465)
+ 			let approvalFeedback: { text: string; images?: string[] } | undefined
+
+label export async function presentAssistantMessage(cline: Task) {
+
+ 					}
+ 
+ 					// Add tool_result with text content only
++					// kilocode_change: include images in tool_result for native protocol to support interleaving
+ 					cline.pushToolResultToUserContent({
+ 						type: "tool_result",
+ 						tool_use_id: toolCallId,
+-						content: resultContent,
++						content:
++							imageBlocks.length > 0
++								? [{ type: "text", text: resultContent }, ...imageBlocks]
++								: resultContent,
+ 					})
+ 
+-					// Add image blocks separately after tool_result
+-					if (imageBlocks.length > 0) {
+-						cline.userMessageContent.push(...imageBlocks)
+-					}
+-
+ 					hasToolResult = true
+ 				} else {
+ 					// For XML protocol, add as text blocks (legacy behavior)
+
+label export async function presentAssistantMessage(cline: Task) {
+
+ 						resultContent = `${feedbackText}\n\n${resultContent}`
+ 					}
+ 
+-					cline.userMessageContent.push({ type: "text", text: `${toolDescription()} Result:` })
++					// kilocode_change: bundle XML results into a single text block to support interleaving
++					let xmlResultText = `${toolDescription()} Result:\n${resultContent}`
+ 
+-					if (typeof content === "string") {
+-						cline.userMessageContent.push({
+-							type: "text",
+-							text: resultContent,
+-						})
+-					} else {
+-						// Add text content with merged feedback
+-						cline.userMessageContent.push({
+-							type: "text",
+-							text: resultContent,
+-						})
+-						// Add any images from the tool result
++					if (typeof content !== "string") {
+ 						const imageBlocks = content.filter((item) => item.type === "image")
+ 						if (imageBlocks.length > 0) {
+-							cline.userMessageContent.push(...imageBlocks)
++							// For XML, we can't easily interleave images in the middle of text turns if we want 1-to-1 matching,
++							// but we can append them to the same result block.
++							// Note: formatResponse.imageBlocks will be handled by the message manager/history builder.
++							// For now, we'll just keep it as text + images pushed to userMessageContent.
++							cline.userMessageContent.push({ type: "text", text: xmlResultText })
++							cline.userMessageContent.push(...(imageBlocks as Anthropic.ImageBlockParam[]))
++						} else {
++							cline.userMessageContent.push({ type: "text", text: xmlResultText })
+ 						}
++					} else {
++						cline.userMessageContent.push({ type: "text", text: xmlResultText })
+ 					}
+ 				}
+ 
+
+label export async function presentAssistantMessage(cline: Task) {
+
+ 	// This needs to be placed here, if not then calling
+ 	// cline.presentAssistantMessage below would fail (sometimes) since it's
+ 	// locked.
+-	cline.presentAssistantMessageLocked = false
+-
+ 	// NOTE: When tool is rejected, iterator stream is interrupted and it waits
+ 	// for `userMessageContentReady` to be true. Future calls to present will
+ 	// skip execution since `didRejectTool` and iterate until `contentIndex` is
+
+label export async function presentAssistantMessage(cline: Task) {
+
+ 		// again it will be streaming the next block.
+ 		cline.currentStreamingContentIndex++
+ 
++		// Release lock AFTER incrementing index to prevent race conditions where
++		// a new stream chunk triggers a call with the old index.
++		cline.presentAssistantMessageLocked = false
++
+ 		if (cline.currentStreamingContentIndex < cline.assistantMessageContent.length) {
+ 			// There are already more content blocks to stream, so we'll call
+ 			// this function ourselves.
+ 			// kilocode_change start: prevent excessive recursion
+ 			await yieldPromise()
+ 			await presentAssistantMessage(cline)
+ 			// kilocode_change end
+ 			return
+ 		} else {
+ 			// CRITICAL FIX: If we're out of bounds and the stream is complete, set userMessageContentReady
+ 			// This handles the case where assistantMessageContent is empty or becomes empty after processing
+ 			if (cline.didCompleteReadingStream) {
+ 				cline.userMessageContentReady = true
+ 			}
+ 		}
++	} else {
++		// If the block is still partial, release the lock so the next stream chunk can update it.
++		cline.presentAssistantMessageLocked = false
+ 	}
+ 
+-	// Block is partial, but the read stream may have finished.
++	// Block was partial or just finished, but more updates arrived while we were locked.
+ 	if (cline.presentAssistantMessageHasPendingUpdates) {
+ 		// kilocode_change start: prevent excessive recursion
+ 		await yieldPromise()
+
+file src/core/task/Task.ts
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 							break
+ 						}
+ 
+-						if (this.didAlreadyUseTool) {
+-							assistantMessage +=
+-								"\n\n[Response interrupted by a tool use result. Only one tool may be used at a time and should be placed at the end of the message.]"
+-							break
+-						}
+ 					}
+ 
+ 					// Finalize any remaining streaming tool calls that weren't explicitly ended
+
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 							? deduplicateToolUseBlocks(assistantApiMessage) // Deduplicate if multiple tools
+ 							: assistantApiMessage
+ 
+-					await this.addToApiConversationHistory(
+-						deduplicatedAssistantMessage,
+-						reasoningMessage || undefined, // Include reasoning if present
+-					)
++					// kilocode_change: Implement interleaving for multiple tool calls
++					const assistantContentBlocks = Array.isArray(deduplicatedAssistantMessage.content)
++						? deduplicatedAssistantMessage.content
++						: [{ type: "text" as const, text: deduplicatedAssistantMessage.content as string }]
++
++					// Track indices of ALL tools (Native tool_use OR XML formatted text blocks)
++					const toolUseIndices = assistantContentBlocks
++						.map((block, index) => {
++							if (block.type === "tool_use") {
++								return index
++							}
++							// For XML protocol, tools are embedded in text blocks.
++							// We only interleave if the task is locked to XML protocol.
++							if (
++								this._taskToolProtocol === "xml" &&
++								block.type === "text" &&
++								block.text.startsWith("<") &&
++								block.text.endsWith(">")
++							) {
++								return index
++							}
++							return -1
++						})
++						.filter((index) => index !== -1)
++
++					if (toolUseIndices.length > 1) {
++						// Multiple tools detected: interleave tool_use and tool_result pairs into separate turns
++						// 1. First turn: Text/Thinking + FIRST tool_use
++						const firstToolIndex = toolUseIndices[0]
++						const firstTurnContent = assistantContentBlocks.slice(0, firstToolIndex + 1)
++						await this.addToApiConversationHistory(
++							{ role: "assistant", content: firstTurnContent },
++							reasoningMessage || undefined,
++						)
++
++						// Wait for tools to finish executing and results to be pushed to userMessageContent
++						await pWaitFor(() => this.userMessageContentReady)
++
++						// 2. Subsequent turns: tool_result (from user) + NEXT tool_use (from assistant)
++						// Note: userMessageContent currently contains ALL results. We need to match them 1-to-1.
++						const allResults = [...this.userMessageContent]
++						this.userMessageContent = [] // Clear to prevent initiateTaskLoop from adding them again
++
++						for (let i = 0; i < toolUseIndices.length; i++) {
++							const toolIndex = toolUseIndices[i]
++							const assistantBlock = assistantContentBlocks[toolIndex]
++
++							let resultBlock: Anthropic.ContentBlockParam | undefined
++
++							if (assistantBlock.type === "tool_use") {
++								// Native: Find corresponding result by ID
++								const resultIndex = allResults.findIndex(
++									(r) => r.type === "tool_result" && r.tool_use_id === assistantBlock.id,
++								)
++								if (resultIndex !== -1) {
++									resultBlock = allResults[resultIndex]
++								}
++							} else {
++								// XML: Results are text blocks in allResults. Match by index.
++								// We assume presentAssistantMessage pushes XML results in order.
++								resultBlock = allResults[i]
++							}
++
++							if (resultBlock) {
++								const userTurnContent: Anthropic.ContentBlockParam[] = [resultBlock]
++
++								// If this wasn't the first tool, we need to add the result to history
++								// AND then add the NEXT tool use as a separate assistant message.
++								if (i > 0) {
++									// Add result turn
++									await this.addToApiConversationHistory({ role: "user", content: userTurnContent })
++									// Add next tool turn
++									await this.addToApiConversationHistory({ role: "assistant", content: [assistantBlock] })
++								} else {
++									// For the first tool, the assistant message is already added.
++									// We just need to add the result turn.
++									await this.addToApiConversationHistory({ role: "user", content: userTurnContent })
++								}
++							}
++						}
++
++						// After all interleaved turns are added, we don't want the outer loop to add the user message again
++						currentItem.userContent = []
++					} else {
++						// Single tool or no tools: use standard flow
++						await this.addToApiConversationHistory(
++							deduplicatedAssistantMessage,
++							reasoningMessage || undefined,
++						)
++					}
+ 
+ 					TelemetryService.instance.captureConversationMessage(this.taskId, "assistant")
+ 

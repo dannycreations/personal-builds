@@ -1,10 +1,13 @@
 file packages/types/src/experiment.ts
 label import type { Keys, Equals, AssertEqual } from "./type-fu.js"
 
+ 
+ const kilocodeExperimentIds = ["morphFastApply", "speechToText"] as const // kilocode_change
  export const experimentIds = [
 +	"rawSystemPrompt",
  	"powerSteering",
  	"multiFileApplyDiff",
+ 	"preventFocusDisruption",
 
 label export type ExperimentId = z.infer<typeof experimentIdsSchema>
 
@@ -151,6 +154,35 @@ label export const SYSTEM_PROMPT = async (
  	// Try to load custom system prompt from file
  	const variablesForPrompt: PromptVariables = {
  		workspace: cwd,
+
+file src/core/task/build-tools.ts
+
++import * as os from "os"
++import { fileExistsAtPath } from '../../utils/fs'
++import { safeReadFile } from '../prompts/sections/custom-system-prompt'
+ import path from "path"
+ 
+ import type OpenAI from "openai"
+
+label export async function buildNativeToolsArrayWithRestrictions(options: BuildToolsO
+
+ 		includeAllToolsWithRestrictions,
+ 	} = options
+ 
++  if (experiments?.rawSystemPrompt) {
++    const systemPath = path.join(os.homedir(), ".kilocode", "systems")
++    const systemRolePath = path.join(systemPath, `00-tools.json`)
++
++    if (await fileExistsAtPath(systemRolePath)) {
++      const readTools = await safeReadFile(systemRolePath)
++      const tools = (() => { try { return JSON.parse(readTools) } catch { return {} } })()
++      if (Object.keys(tools).length > 0) return { tools }
++    }
++  }
++
+ 	const mcpHub = provider.getMcpHub()
+ 
+ 	// Get CodeIndexManager for feature checking.
 
 file src/shared/__tests__/experiments.spec.ts
 label describe("experiments", () => {

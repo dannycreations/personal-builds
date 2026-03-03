@@ -1,0 +1,51 @@
+file src/core/task/Task.ts
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 							continue
+ 						}
+ 
++						// Handle reasoning chunks by resetting userMessageContentReady.
++						// This prevents deadlocks when a response only contains reasoning (thinking)
++						// and no text/tools yet, or when it's interrupted during thinking.
++						if (chunk.type === "reasoning" || chunk.type === "ant_thinking" || chunk.type === "ant_redacted_thinking") {
++							this.userMessageContentReady = false
++						}
++
+ 						switch (chunk.type) {
+ 							case "reasoning": {
+ 								reasoningMessage += chunk.text
+
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 				// tool use since user can exit at any moment and we wouldn't be
+ 				// able to save the assistant's response.
+ 
+-				// Check if we have any content to process (text or tool uses)
++				// Check if we have any content to process (reasoning, text or tool uses)
++				const hasReasoning = reasoningMessage.length > 0 || antThinkingContent.length > 0
+ 				const hasTextContent = assistantMessage.length > 0
+ 
+ 				const hasToolUses = this.assistantMessageContent.some(
+ 					(block) => block.type === "tool_use" || block.type === "mcp_tool_use",
+ 				)
+ 
+-				if (hasTextContent || hasToolUses) {
++				if (hasReasoning || hasTextContent || hasToolUses) {
+ 					// Reset counter when we get a successful response with content
+ 					this.consecutiveNoAssistantMessagesCount = 0
+ 					// Display grounding sources to the user if they exist
+
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 							await this.say("api_req_retried")
+ 
+ 							// Push the same content back to retry
++							// Mark that user message was removed so it gets re-added on retry
+ 							stack.push({
+ 								userContent: currentUserContent,
+ 								includeFileDetails: false,
+ 								retryAttempt: (currentItem.retryAttempt ?? 0) + 1,
++								userMessageWasRemoved: true,
+ 							})
+ 
+ 							// Continue to retry the request
