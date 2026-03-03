@@ -75,8 +75,8 @@ label const geminiSchema = apiModelIdProviderModelSchema.extend({
 
 label export const providerSettingsSchemaDiscriminated = z.discriminatedUnion("apiProv
 
- 	fakeAiSchema.merge(z.object({ apiProvider: z.literal("fake-ai") })),
  	xaiSchema.merge(z.object({ apiProvider: z.literal("xai") })),
+ 	ocaSchema.merge(z.object({ apiProvider: z.literal("oca") })), // kilocode_change
  	// kilocode_change start
 +	geminiCliSchema.merge(z.object({ apiProvider: z.literal("gemini-cli") })),
  	apertisSchema.merge(z.object({ apiProvider: z.literal("apertis") })),
@@ -128,6 +128,20 @@ file packages/types/src/providers/gemini-cli.ts
 +    supportsNativeTools: true,
 +    defaultToolProtocol: 'xml',
 +    supportsReasoningEffort: ['low', 'medium', 'high'],
++    reasoningEffort: 'low',
++    supportsTemperature: true,
++    defaultTemperature: 1,
++    inputPrice: 0,
++    outputPrice: 0,
++  },
++  'gemini-3.1-flash-lite-preview': {
++    maxTokens: 65_536,
++    contextWindow: 1_048_576,
++    supportsImages: true,
++    supportsPromptCache: true,
++    supportsNativeTools: true,
++    defaultToolProtocol: 'xml',
++    supportsReasoningEffort: ['minimal', 'low', 'medium', 'high'],
 +    reasoningEffort: 'low',
 +    supportsTemperature: true,
 +    defaultTemperature: 1,
@@ -785,11 +799,11 @@ label export function checkExistKey(config: ProviderSettings | undefined) {
  	// Special case for human-relay, fake-ai, claude-code, openai-codex, qwen-code, roo and kilocode providers which don't need any configuration.
  	if (
  		config.apiProvider &&
--		["human-relay", "fake-ai", "claude-code", "openai-codex", "qwen-code", "roo", "kilocode"].includes(
-+		["human-relay", "fake-ai", "claude-code", "openai-codex", "qwen-code", "roo", "kilocode", "gemini-cli"].includes(
+-		["human-relay", "fake-ai", "claude-code", "openai-codex", "qwen-code", "roo", "kilocode", "oca"].includes(
++		["human-relay", "fake-ai", "claude-code", "openai-codex", "qwen-code", "roo", "kilocode", "oca", "gemini-cli"].includes(
+ 			// kilocode_change: add oca
  			config.apiProvider,
  		) // kilocode_change: add kilocode for anonymous access
- 	) {
 
 file webview-ui/src/components/kilocode/hooks/useProviderModels.ts
 label import {
@@ -853,7 +867,7 @@ label const ApiOptions = ({
  
  		// kilocode_change start
  		// Providers that don't have documentation pages yet
--		const excludedProviders = ["moonshot", "chutes", "cerebras", "litellm", "zai", "qwen-code", "minimax"]
+-		const excludedProviders = ["moonshot", "chutes", "cerebras", "litellm", "zai", "qwen-code", "minimax", "oca"]
 +		const excludedProviders = [
 +			"gemini-cli",
 +			"moonshot",
@@ -863,6 +877,7 @@ label const ApiOptions = ({
 +			"zai",
 +			"qwen-code",
 +			"minimax",
++			"oca"
 +		]
  
  		// Skip documentation link when the provider is excluded because documentation is not available
