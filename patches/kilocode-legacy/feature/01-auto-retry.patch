@@ -246,10 +246,38 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
  
 -			// Show countdown timer with exponential backoff
 -			for (let i = finalDelay; i > 0; i--) {
++			const lastMessage = this.clineMessages.at(-1)
++			const isUpdatingPreviousRetry = lastMessage?.say === "api_req_retry_delayed"
++
 +			for (let i = requestDelaySeconds; i > 0; i--) {
  				// Check abort flag during countdown to allow early exit
  				if (this.abort) {
  					throw new Error(`[Task#${this.taskId}] Aborted during retry countdown`)
+ 				}
+ 
+-				await this.say("api_req_retry_delayed", `${headerText}<retry_timer>${i}</retry_timer>`, undefined, true)
++				if (isUpdatingPreviousRetry) {
++					lastMessage.text = `${headerText}<retry_timer>${i}</retry_timer>`
++					lastMessage.partial = true
++					await this.updateClineMessage(lastMessage)
++				} else {
++					await this.say("api_req_retry_delayed", `${headerText}<retry_timer>${i}</retry_timer>`, undefined, true)
++				}
+ 				await delay(1000)
+ 			}
+ 
+-			await this.say("api_req_retry_delayed", headerText, undefined, false)
++			if (isUpdatingPreviousRetry) {
++				lastMessage.text = headerText
++				lastMessage.partial = false
++				await this.saveClineMessages()
++				await this.updateClineMessage(lastMessage)
++			} else {
++				await this.say("api_req_retry_delayed", headerText, undefined, false)
++			}
+ 		} catch (err) {
+ 			console.error("Exponential backoff failed:", err)
+ 		}
 
 file src/core/webview/ClineProvider.ts
 label export class ClineProvider

@@ -343,7 +343,7 @@ file src/api/providers/gemini-cli.ts
 +        functionDeclarations: metadata.tools.map((tool) => ({
 +          name: (tool as any).function.name,
 +          description: (tool as any).function.description,
-+          parameters: (tool as any).function.parameters,
++          parametersJsonSchema: (tool as any).function.parameters,
 +        })),
 +      });
 +    }
