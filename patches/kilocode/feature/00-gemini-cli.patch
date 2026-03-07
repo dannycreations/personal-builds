@@ -271,7 +271,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +      if (!geminiCliOAuthPath) {
 +        try {
 +          const content = await Bun.file(join(dirname(OAUTH_DEFAULT_PATH), ".env")).text()
-+          const match = content.match(/GOOGLE_OAUTH_PATH=["']?([^"'\\r\\n\\s]+)["']?/)
++          const match = content.match(/GOOGLE_OAUTH_PATH=["']?([^"'\r\n\s;]+)["']?/)
 +          const oauthPath = match ? match[1].trim() : ""
 +          if (oauthPath) geminiCliOAuthPath = oauthPath
 +        } catch {}
@@ -332,7 +332,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +
 +    try {
 +      const content = await Bun.file(join(dirname(this.credPath), ".env")).text()
-+      const match = content.match(/GOOGLE_CLOUD_PROJECT=["']?([^"'\\r\\n\\s]+)["']?/)
++      const match = content.match(/GOOGLE_CLOUD_PROJECT=["']?([^"'\r\n\s;]+)["']?/)
 +      const projectId = match ? match[1].trim() : ""
 +      if (projectId) {
 +        this.projectId = projectId

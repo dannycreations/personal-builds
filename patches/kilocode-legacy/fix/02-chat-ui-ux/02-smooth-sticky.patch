@@ -5,7 +5,7 @@ label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatV
  	const handleRowHeightChange = useCallback(
  		(isTaller: boolean) => {
 -			if (isAtBottom) {
-+			if (isAtBottom && (isStreaming || stickyFollowRef.current)) {
++			if (isAtBottom && stickyFollowRef.current) {
  				if (isTaller) {
  					scrollToBottomSmooth()
  				} else {
@@ -13,8 +13,7 @@ label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatV
  				}
  			}
  		},
--		[scrollToBottomSmooth, scrollToBottomAuto, isAtBottom],
-+		[scrollToBottomSmooth, scrollToBottomAuto, isAtBottom, isStreaming],
+ 		[scrollToBottomSmooth, scrollToBottomAuto, isAtBottom],
  	)
  
  	// Disable sticky follow when user scrolls up inside the chat container
@@ -53,12 +52,10 @@ label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatV
  								data={groupedMessages}
  								itemContent={itemContent}
 -								followOutput={(isAtBottom: boolean) => isAtBottom || stickyFollowRef.current}
-+								followOutput={(isAtBottom: boolean) => (isAtBottom && isStreaming) || stickyFollowRef.current}
++								followOutput={() => stickyFollowRef.current}
  								atBottomStateChange={(isAtBottom: boolean) => {
  									setIsAtBottom(isAtBottom)
-+									if (!isAtBottom) {
-+										stickyFollowRef.current = false
-+									}
++									stickyFollowRef.current = isAtBottom
  									// Only show the scroll-to-bottom button if not at bottom
  									setShowScrollToBottom(!isAtBottom)
  								}}
