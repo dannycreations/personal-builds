@@ -1,11 +1,51 @@
 file webview-ui/src/components/chat/ChatView.tsx
 label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 
+ 	const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({})
+ 	const prevExpandedRowsRef = useRef<Record<number, boolean>>()
+ 	const scrollContainerRef = useRef<HTMLDivElement>(null)
++	const isTaskCompleted = useMemo(() => {
++		return (
++			messages.at(-1)?.ask === "completion_result" ||
++			messages.at(-1)?.say === "completion_result" ||
++			clineAsk === "completion_result" ||
++			clineAsk === "resume_completed_task"
++		)
++	}, [messages, clineAsk])
++
+ 	const stickyFollowRef = useRef<boolean>(false)
+ 	const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+ 	const [isAtBottom, setIsAtBottom] = useState(false)
+
+label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
+
+ 		}
+ 		// Reset user response flag for new task
+ 		userRespondedRef.current = false
++		// Engage sticky follow for new tasks
++		stickyFollowRef.current = !isTaskCompleted
+ 	}, [task?.ts])
+ 
++	useEffect(() => {
++		if (isTaskCompleted) {
++			stickyFollowRef.current = false
++		}
++	}, [isTaskCompleted])
++
+ 	const taskTs = task?.ts
+ 
+ 	// Request aggregated costs when task changes and has childIds
+
+label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
+
  
  	const handleRowHeightChange = useCallback(
  		(isTaller: boolean) => {
 -			if (isAtBottom) {
-+			if (isAtBottom && stickyFollowRef.current) {
++			// Only auto-scroll when row heights change IF:
++			// 1. We are streaming (active content generation)
++			// 2. Stickiness is enabled (user wants to follow)
++			if (isStreaming && stickyFollowRef.current) {
  				if (isTaller) {
  					scrollToBottomSmooth()
  				} else {
@@ -13,7 +53,8 @@ label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatV
  				}
  			}
  		},
- 		[scrollToBottomSmooth, scrollToBottomAuto, isAtBottom],
+-		[scrollToBottomSmooth, scrollToBottomAuto, isAtBottom],
++		[scrollToBottomSmooth, scrollToBottomAuto, isStreaming],
  	)
  
  	// Disable sticky follow when user scrolls up inside the chat container
@@ -25,9 +66,10 @@ label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatV
  		}
  	}, [])
 -	useEvent("wheel", handleWheel, window, { passive: true })
--
+ 
 -	// Also disable sticky follow when the chat container is scrolled away from bottom
--	useEffect(() => {
++	// Re-engage stickiness when streaming starts OR when user scrolls back to bottom while streaming
+ 	useEffect(() => {
 -		const el = scrollContainerRef.current
 -		if (!el) return
 -		const onScroll = () => {
@@ -38,13 +80,26 @@ label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatV
 -			}
 -			// Keep UI button state in sync with scroll position
 -			setShowScrollToBottom(!nearBottom)
--		}
++		if (isStreaming && isAtBottom) {
++			stickyFollowRef.current = true
+ 		}
 -		el.addEventListener("scroll", onScroll, { passive: true })
 -		return () => el.removeEventListener("scroll", onScroll)
 -	}, [])
++	}, [isStreaming, isAtBottom])
  
  	//kilocode_change
  	// Effect to clear checkpoint warning when messages appear or task changes
+
+label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
+
+ 						groupedMessages={groupedMessages}
+ 						onMessageClick={handleMessageClick}
+ 						isTaskActive={sendingDisabled}
++						isTaskCompleted={isTaskCompleted}
+ 						todos={latestTodos}
+ 					/>
+ 					{/* kilocode_change start */}
 
 label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 
@@ -52,10 +107,111 @@ label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatV
  								data={groupedMessages}
  								itemContent={itemContent}
 -								followOutput={(isAtBottom: boolean) => isAtBottom || stickyFollowRef.current}
-+								followOutput={() => stickyFollowRef.current}
++								followOutput={() => !isTaskCompleted && stickyFollowRef.current}
  								atBottomStateChange={(isAtBottom: boolean) => {
  									setIsAtBottom(isAtBottom)
-+									stickyFollowRef.current = isAtBottom
  									// Only show the scroll-to-bottom button if not at bottom
  									setShowScrollToBottom(!isAtBottom)
  								}}
+-								atBottomThreshold={10}
++								atBottomThreshold={5}
+ 								initialTopMostItemIndex={groupedMessages.length - 1}
+ 							/>
+ 						</div>
+
+label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
+
+ 				onSelectImages={selectImages}
+ 				shouldDisableImages={shouldDisableImages}
+ 				onHeightChange={() => {
+-					if (isAtBottom) {
++					if (!isTaskCompleted && stickyFollowRef.current) {
+ 						scrollToBottomAuto()
+ 					}
+ 				}}
+
+file webview-ui/src/components/chat/TaskTimeline.tsx
+label interface TaskTimelineProps {
+
+ 	groupedMessages: (ClineMessage | ClineMessage[])[]
+ 	onMessageClick?: (index: number) => void
+ 	isTaskActive?: boolean
++	isTaskCompleted?: boolean
+ }
+ 
+ // Translates vertical scrolling into horizontal scrolling and supports drag scrolling
+
+label const HorizontalScroller = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLD
+
+ 	},
+ )
+ 
+-export const TaskTimeline = memo<TaskTimelineProps>(({ groupedMessages, onMessageClick, isTaskActive = false }) => {
++export const TaskTimeline = memo<TaskTimelineProps>(({ groupedMessages, onMessageClick, isTaskActive = false, isTaskCompleted = false }) => {
+ 	const { setHoveringTaskTimeline } = useExtensionState()
+ 	const virtuosoRef = useRef<VirtuosoHandle>(null)
+ 	const previousGroupedLengthRef = useRef(groupedMessages.length)
+
+label export const TaskTimeline = memo<TaskTimelineProps>(({ groupedMessages, onMessag
+
+ 
+ 		// Scroll to end if we have timeline data and either:
+ 		// 1. New messages were added, or 2. This is the initial mount with data
+-		if (timelineMessagesData.length > 0 && (hasNewMessages || isInitialMount)) {
++		// ONLY if the task is not completed (to avoid jumping while user is reviewing)
++		if (!isTaskCompleted && timelineMessagesData.length > 0 && (hasNewMessages || isInitialMount)) {
+ 			const targetIndex = timelineMessagesData.length - 1
+ 			const behavior = isInitialMount ? "auto" : "smooth"
+ 			virtuosoRef.current?.scrollToIndex({ index: targetIndex, align: "end", behavior })
+
+file webview-ui/src/components/chat/TodoListDisplay.tsx
+label export function TodoListDisplay({ todos }: { todos: any[] }) {
+
+ 	}, [todos])
+ 	useEffect(() => {
+ 		if (isCollapsed) return
++		if (allCompleted) return // Don't auto-scroll if all are completed
+ 		if (!ulRef.current) return
+ 		if (scrollIndex === -1) return
+ 		const target = itemRefs.current[scrollIndex]
+
+file webview-ui/src/components/kilocode/KiloTaskHeader.tsx
+label export interface TaskHeaderProps {
+
+ 	groupedMessages: (ClineMessage | ClineMessage[])[]
+ 	onMessageClick?: (index: number) => void
+ 	isTaskActive?: boolean
++	isTaskCompleted?: boolean
+ 	todos?: any[]
+ }
+ 
+
+label const KiloTaskHeader = ({
+
+ 	groupedMessages,
+ 	onMessageClick,
+ 	isTaskActive = false,
++	isTaskCompleted = false,
+ 	todos,
+ }: TaskHeaderProps) => {
+ 	const { t } = useTranslation()
+
+label const KiloTaskHeader = ({
+
+ 								groupedMessages={groupedMessages}
+ 								onMessageClick={onMessageClick}
+ 								isTaskActive={isTaskActive}
++								isTaskCompleted={isTaskCompleted}
+ 							/>
+ 						)}
+ 
+
+label const KiloTaskHeader = ({
+
+ 								groupedMessages={groupedMessages}
+ 								onMessageClick={onMessageClick}
+ 								isTaskActive={isTaskActive}
++								isTaskCompleted={isTaskCompleted}
+ 							/>
+ 						)}
+ 
