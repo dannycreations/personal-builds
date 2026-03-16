@@ -48,8 +48,7 @@ label export async function presentAssistantMessage(cline: Task) {
 +				}
 +				break
 +			}
- 
--	switch (block.type) {
++
 +			let block: any
 +			try {
 +				// Performance optimization: Use shallow copy instead of deep clone.
@@ -65,7 +64,8 @@ label export async function presentAssistantMessage(cline: Task) {
 +				)
 +				break
 +			}
-+
+ 
+-	switch (block.type) {
 +			switch (block.type) {
  		case "mcp_tool_use": {
  			// Handle native MCP tool calls (from mcp_serverName_toolName dynamic tools)
@@ -94,6 +94,26 @@ label export async function presentAssistantMessage(cline: Task) {
  			// Track if we've already pushed a tool result
  			let hasToolResult = false
  			const toolCallId = mcpBlock.id
+
+label export async function presentAssistantMessage(cline: Task) {
+
+ 				let imageBlocks: Anthropic.ImageBlockParam[] = []
+ 
+ 				if (typeof content === "string") {
+-					resultContent = content || "(tool did not return anything)"
++					resultContent =
++						content ||
++						`The tool "${mcpBlock.name}" did not return any content. If this was unexpected, please verify the tool parameters or try a different approach.`
+ 				} else {
+ 					const textBlocks = content.filter((item) => item.type === "text")
+ 					imageBlocks = content.filter((item) => item.type === "image") as Anthropic.ImageBlockParam[]
+ 					resultContent =
+ 						textBlocks.map((item) => (item as Anthropic.TextBlockParam).text).join("\n") ||
+-						"(tool did not return anything)"
++						`The tool "${mcpBlock.name}" did not return any text content. If this was unexpected, please verify the tool parameters or try a different approach.`
+ 				}
+ 
+ 				// Merge approval feedback into tool result (GitHub #10465)
 
 label export async function presentAssistantMessage(cline: Task) {
 
@@ -144,6 +164,29 @@ label export async function presentAssistantMessage(cline: Task) {
 
 label export async function presentAssistantMessage(cline: Task) {
 
+ 					let imageBlocks: Anthropic.ImageBlockParam[] = []
+ 
+ 					if (typeof content === "string") {
+-						resultContent = content || "(tool did not return anything)"
++						resultContent =
++							content ||
++							`The tool "${block.name}" did not return any content. If this was unexpected, please verify the tool parameters or try a different approach.`
+ 					} else {
+ 						// Separate text and image blocks
+ 						const textBlocks = content.filter((item) => item.type === "text")
+ 						imageBlocks = content.filter((item) => item.type === "image") as Anthropic.ImageBlockParam[]
+ 
+ 						// Convert text blocks to string for tool_result
+ 						resultContent =
+ 							textBlocks.map((item) => (item as Anthropic.TextBlockParam).text).join("\n") ||
+-							"(tool did not return anything)"
++							`The tool "${block.name}" did not return any text content. If this was unexpected, please verify the tool parameters or try a different approach.`
+ 					}
+ 
+ 					// Merge approval feedback into tool result (GitHub #10465)
+
+label export async function presentAssistantMessage(cline: Task) {
+
  					}
  
  					// Add tool_result with text content only
@@ -166,9 +209,27 @@ label export async function presentAssistantMessage(cline: Task) {
  					hasToolResult = true
  				} else {
  					// For XML protocol, add as text blocks (legacy behavior)
-
-label export async function presentAssistantMessage(cline: Task) {
-
+ 					let resultContent: string
+ 
+ 					if (typeof content === "string") {
+-						resultContent = content || "(tool did not return anything)"
++						resultContent =
++							content ||
++							`The tool "${block.name}" did not return any content. If this was unexpected, please verify the tool parameters or try a different approach.`
+ 					} else {
+ 						const textBlocks = content.filter((item) => item.type === "text")
+ 						resultContent =
+ 							textBlocks.map((item) => (item as Anthropic.TextBlockParam).text).join("\n") ||
+-							"(tool did not return anything)"
++							`The tool "${block.name}" did not return any text content. If this was unexpected, please verify the tool parameters or try a different approach.`
+ 					}
+ 
+ 					// Merge approval feedback into tool result (GitHub #10465)
+ 					if (approvalFeedback) {
+ 						const feedbackText = formatResponse.toolApprovedWithFeedback(
+ 							approvalFeedback.text,
+ 							toolProtocol,
+ 						)
  						resultContent = `${feedbackText}\n\n${resultContent}`
  					}
  
@@ -360,6 +421,30 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
+ 		// Wait for askResponse to be set
+ 		await pWaitFor(
+ 			() => {
+-				if (this.askResponse !== undefined || this.lastMessageTs !== askTs) {
++				if (this.askResponse !== undefined || this.lastMessageTs !== askTs || this.abort) {
+ 					return true
+ 				}
+ 
+
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 			{ interval: 100 },
+ 		)
+ 
++		if (this.abort) {
++			throw new Error(`[KiloCode#ask] task ${this.taskId}.${this.instanceId} aborted during wait`)
++		}
++
+ 		if (this.lastMessageTs !== askTs) {
+ 			// Could happen if we send multiple asks in a row i.e. with
+ 			// command_output. It's important that when we know an ask could
+
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
  							break
  						}
  
@@ -437,7 +522,13 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 +						)
 +
 +						// Wait for tools to finish executing and results to be pushed to userMessageContent
-+						await pWaitFor(() => this.userMessageContentReady)
++						await pWaitFor(() => this.userMessageContentReady || this.abort, { interval: 100 })
++
++						if (this.abort) {
++							throw new Error(
++								`[KiloCode#recursivelyMakeClineRequests] task ${this.taskId}.${this.instanceId} aborted during interleaved wait`,
++							)
++						}
 +
 +						// 2. Subsequent turns: tool_result (from user) + NEXT tool_use (from assistant)
 +						// Note: userMessageContent currently contains ALL results. We need to match them 1-to-1.
@@ -516,6 +607,23 @@ label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
  					TelemetryService.instance.captureConversationMessage(this.taskId, "assistant")
  
 
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 					// 	this.userMessageContentReady = true
+ 					// }
+ 
+-					await pWaitFor(() => this.userMessageContentReady)
++					await pWaitFor(() => this.userMessageContentReady || this.abort, { interval: 100 })
++
++					if (this.abort) {
++						throw new Error(
++							`[KiloCode#recursivelyMakeClineRequests] task ${this.taskId}.${this.instanceId} aborted during tool result wait`,
++						)
++					}
+ 
+ 					// If the model did not tool use, then we need to tell it to
+ 					// either use a tool or attempt_completion.
+
 file src/core/task/validateToolResultIds.ts
 label export class MissingToolResultError extends Error {
 
@@ -541,3 +649,33 @@ label export function validateAndFixToolResultIds(
  
  	// Check if any tool_result has an invalid ID
  	const hasInvalidIds = toolResults.some((result) => !validToolUseIds.has(result.tool_use_id))
+
+file src/core/webview/ClineProvider.ts
+label export class ClineProvider
+
+ 		task.abandoned = true
+ 
+ 		await pWaitFor(
+-			() =>
+-				this.getCurrentTask()! === undefined ||
+-				this.getCurrentTask()!.isStreaming === false ||
+-				this.getCurrentTask()!.didFinishAbortingStream ||
+-				// If only the first chunk is processed, then there's no
+-				// need to wait for graceful abort (closes edits, browser,
+-				// etc).
+-				this.getCurrentTask()!.isWaitingForFirstChunk,
++			() => {
++				const currentTask = this.getCurrentTask()
++				return (
++					currentTask === undefined ||
++					currentTask.isStreaming === false ||
++					currentTask.didFinishAbortingStream ||
++					// If only the first chunk is processed, then there's no
++					// need to wait for graceful abort (closes edits, browser,
++					// etc).
++					currentTask.isWaitingForFirstChunk
++				)
++			},
+ 			{
+ 				timeout: 3_000,
+ 			},
