@@ -6,6 +6,6 @@ patches-version = "dev"
 [Twitter]
 apkmirror-dlurl = "https://www.apkmirror.com/apk/x-corp/twitter"
 uptodown-dlurl = "https://twitter.en.uptodown.com/android"
-apkmirror-fburl = "https://www.apkmirror.com/apk/x-corp/twitter/x-previously-twitter-11-4-0-release-0-release/"
+apkmirror-fburl = "https://www.apkmirror.com/apk/x-corp/twitter/x-11-78-0-release-0-release/"
 arch = "arm64-v8a"
 # patcher-args = "-OpackageNameTwitter=com.twitter.android"

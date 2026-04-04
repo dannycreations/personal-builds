@@ -44,6 +44,7 @@ jobs:
         working-directory: ${{ env.WORK_DIR }}
         run: |
           rm -rf sig.txt
+          chmod +x build.sh
 
           find "${{ env.WORK_DIR }}_patch" -maxdepth 1 -name "*-*.toml" -exec ./build.sh {} \;
 
