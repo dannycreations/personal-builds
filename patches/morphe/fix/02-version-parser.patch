@@ -1,0 +1,53 @@
+file utils.sh
+label get_prebuilts() {
+
+ 			if [ "$grab_cl" = true ]; then echo -e "[Changelog](https://github.com/${src}/releases/tag/${tag_name})\n" >>"${cl_dir}/changelog.md"; fi
+ 			if [ "$REMOVE_RV_INTEGRATIONS_CHECKS" = true ]; then
+ 				local extensions_ext
+-				extensions_ext=$(unzip -l "${file}" "extensions/shared.*" | grep -o "shared\..*") extensions_ext="${extensions_ext#*.}"
++				extensions_ext=$(unzip -l "${file}" "extensions/shared.*" | grep -o "shared\..*" | head -1)
++				extensions_ext="${extensions_ext#*.}"
+ 				if ! (
+ 					mkdir -p "${file}-zip" || return 1
+ 					unzip -qo "${file}" -d "${file}-zip" || return 1
+
+label get_patch_last_supported_ver() {
+
+ 		fi
+ 	fi
+ 	op=$(patches_list_versions "$cli_jar" "$patches_jar" "$pkg_name") || return 1
+-	op=$(sed -n '/(.* patch.*/,$p' <<<"$op" | awk '{$1=$1}1')
+-	if [ "$op" = "Any" ]; then return; fi
+-	pcount=$(head -1 <<<"$op") pcount=${pcount#*(} pcount=${pcount% *}
+-	if [ -z "$pcount" ]; then
++	if [ "$op" = "Any" ] || [ -z "$op" ]; then return; fi
++
++	local versions
++	# Try to parse new format (lines starting with - or just numbers)
++	versions=$(echo "$op" | sed -E 's/^[-* ]+//' | grep -E "^[0-9]+\.[0-9.]+" | awk '{$1=$1}1')
++
++	if [ -z "$versions" ]; then
++		# Try to parse the old format (Version (N patches))
++		local p_line pcount
++		p_line=$(echo "$op" | grep -m1 "patch")
++		if [ "$p_line" ]; then
++			pcount=$(echo "$p_line" | grep -o "[0-9]\+ patch" | head -1 | awk '{print $1}')
++			if [ "$pcount" ]; then
++				versions=$(echo "$op" | grep "$pcount patch" | sed -E 's/[ (\[].*//' | grep -E "^[0-9]+\.[0-9.]+")
++			fi
++		fi
++	fi
++
++	if [ -z "$versions" ]; then
++		# Check if list_patches already has it (passed as $1)
++		versions=$(echo "$1" | sed -n "/$pkg_name/,/Compatible versions:/p" | grep -oE "[0-9]+\.[0-9.]+" | sort -u)
++	fi
++
++	if [ -z "$versions" ]; then
+ 		abort "No patches found for '$pkg_name' in patches '$patches_jar'"
+ 	fi
+-	grep -F "($pcount patch" <<<"$op" | sed 's/ (.* patch.*//' | get_highest_ver || return 1
++	get_highest_ver <<<"$versions"
+ }
+ 
+ patches_list_versions() {
