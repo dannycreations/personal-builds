@@ -42,7 +42,10 @@ jobs:
 
       - name: Build APKs
         working-directory: ${{ env.WORK_DIR }}
-        run: find "${{ env.WORK_DIR }}_patch" -maxdepth 1 -name "*-*.toml" -exec ./build.sh {} \;
+        run: |
+          rm -rf sig.txt
+
+          find "${{ env.WORK_DIR }}_patch" -maxdepth 1 -name "*-*.toml" -exec ./build.sh {} \;
 
       - name: Publish Build and Update SHA
         if: success()
