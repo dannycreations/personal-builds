@@ -37,7 +37,7 @@ jobs:
       - name: Setup Java Environment
         uses: actions/setup-java@v5
         with:
-          java-version: 17
+          java-version: 21
           distribution: zulu
 
       - name: Build APKs
