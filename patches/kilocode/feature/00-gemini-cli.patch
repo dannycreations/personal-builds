@@ -30,7 +30,7 @@ label export namespace Provider {
 
    }
  
-   const BUNDLED_PROVIDERS: Record<string, (options: any) => SDK> = {
+   const BUNDLED_PROVIDERS: Record<string, (options: any) => BundledSDK> = {
 +    "gemini-cli": createGeminiCli,
      "@ai-sdk/amazon-bedrock": createAmazonBedrock,
      "@ai-sdk/anthropic": createAnthropic,
@@ -38,7 +38,7 @@ label export namespace Provider {
 
 label export namespace Provider {
 
-   }>
+   }
  
    const CUSTOM_LOADERS: Record<string, CustomLoader> = {
 +    "gemini-cli": async () => {
@@ -55,10 +55,11 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 
 +import { Env } from "@/env"
 +import {
-+  type LanguageModelV2,
-+  type LanguageModelV2FinishReason,
-+  type LanguageModelV2Prompt,
-+  type LanguageModelV2ToolChoice,
++  type LanguageModelV3,
++  type LanguageModelV3CallOptions,
++  type LanguageModelV3GenerateResult,
++  type LanguageModelV3Prompt,
++  type LanguageModelV3ToolChoice,
 +} from "@ai-sdk/provider"
 +import {
 +  combineHeaders,
@@ -67,11 +68,31 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  generateId,
 +  postJsonToApi,
 +  type FetchFunction,
++  type ResponseHandler,
 +} from "@ai-sdk/provider-utils"
++import { APICallError } from "ai"
 +import { arch, homedir, platform } from "node:os"
 +import { dirname, join } from "node:path"
 +import { z } from "zod/v4"
 +import { Installation } from "../../../installation"
++
++const geminiErrorSchema = z.object({
++  error: z.object({
++    code: z.number().optional(),
++    message: z.string().optional(),
++    status: z.string().optional(),
++    details: z
++      .array(
++        z.object({
++          "@type": z.string().optional(),
++          reason: z.string().optional(),
++          domain: z.string().optional(),
++          metadata: z.record(z.string(), z.string()).optional(),
++        }),
++      )
++      .optional(),
++  }),
++})
 +
 +const OAUTH_CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
 +const OAUTH_CLIENT_SECRET = "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"
@@ -91,8 +112,8 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  readonly fetch?: FetchFunction
 +}
 +
-+export class GeminiCliProvider implements LanguageModelV2 {
-+  public readonly specificationVersion = "v2"
++export class GeminiCliProvider implements LanguageModelV3 {
++  public readonly specificationVersion = "v3"
 +  public readonly provider = "gemini-cli"
 +  public readonly modelId: string
 +  public readonly supportedUrls = {}
@@ -109,16 +130,44 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +    this.config = config
 +  }
 +
++  private failedResponseHandler: ResponseHandler<APICallError> = async ({ response, url, requestBodyValues }) => {
++    const value = await response.json()
++    const parsed = geminiErrorSchema.safeParse(value)
++    const error = parsed.success ? parsed.data.error : undefined
++
++    const isRetryable =
++      response.status === 429 ||
++      response.status >= 500 ||
++      error?.status === "RESOURCE_EXHAUSTED" ||
++      error?.details?.some((d) => d.reason === "RATE_LIMIT_EXCEEDED")
++
++    return {
++      value: new APICallError({
++        message: error?.message || response.statusText,
++        url,
++        requestBodyValues,
++        statusCode: response.status,
++        responseBody: JSON.stringify(value),
++        isRetryable: !!isRetryable,
++      }),
++      responseHeaders: Object.fromEntries(response.headers.entries()),
++    }
++  }
++
 +  public async doGenerate(
-+    options: Parameters<LanguageModelV2["doGenerate"]>[0],
-+  ): Promise<Awaited<ReturnType<LanguageModelV2["doGenerate"]>>> {
++    options: LanguageModelV3CallOptions,
++  ): Promise<Awaited<ReturnType<LanguageModelV3["doGenerate"]>>> {
 +    const { headers, body } = await this.prepareRequest(options)
 +
-+    const { value: responseBody } = await postJsonToApi({
++    const {
++      value: responseBody,
++      responseHeaders,
++      rawValue,
++    } = await postJsonToApi({
 +      url: `${this.config.baseURL}:generateContent`,
 +      headers,
 +      body,
-+      failedResponseHandler: createJsonResponseHandler(z.any()),
++      failedResponseHandler: this.failedResponseHandler,
 +      successfulResponseHandler: createJsonResponseHandler(z.any()),
 +      abortSignal: options.abortSignal,
 +      fetch: this.config.fetch,
@@ -134,32 +183,32 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +          ?.filter((p: any) => p.text && !p.thought)
 +          ?.map((p: any) => p.text)
 +          ?.join("") || "",
-+      finishReason: candidate?.finishReason,
++      finishReason: this.mapFinishReason(candidate?.finishReason),
 +      usage: {
 +        inputTokens: usage?.promptTokenCount ?? 0,
 +        outputTokens: usage?.candidatesTokenCount ?? 0,
-+        totalTokens: usage?.totalTokenCount ?? 0,
 +      },
++      response: { headers: responseHeaders, body: JSON.stringify(rawValue) },
 +      warnings: [],
 +    }
 +  }
 +
 +  public async doStream(
-+    options: Parameters<LanguageModelV2["doStream"]>[0],
-+  ): Promise<Awaited<ReturnType<LanguageModelV2["doStream"]>>> {
++    options: LanguageModelV3CallOptions,
++  ): Promise<Awaited<ReturnType<LanguageModelV3["doStream"]>>> {
 +    const { headers, body } = await this.prepareRequest(options)
 +
-+    const { value: stream } = await postJsonToApi({
++    const { value: stream, responseHeaders } = await postJsonToApi({
 +      url: `${this.config.baseURL}:streamGenerateContent?alt=sse`,
 +      headers,
 +      body,
-+      failedResponseHandler: createJsonResponseHandler(z.any()),
++      failedResponseHandler: this.failedResponseHandler,
 +      successfulResponseHandler: createEventSourceResponseHandler(z.any()),
 +      abortSignal: options.abortSignal,
 +      fetch: this.config.fetch,
 +    })
 +
-+    let finishReason: LanguageModelV2FinishReason = "unknown"
++    let finishReason: LanguageModelV3GenerateResult["finishReason"] = { unified: "other", raw: undefined }
 +    let usage: any = null
 +    let activeReasoning: string | null = null
 +    let activeText: string | null = null
@@ -223,17 +272,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +
 +            if (response.usageMetadata) usage = response.usageMetadata
 +            if (candidate?.finishReason) {
-+              if (activeToolCall) {
-+                finishReason = "tool-calls"
-+                return
-+              }
-+
-+              const reason = candidate?.finishReason
-+              if (reason === "STOP") finishReason = "stop"
-+              else if (reason === "MAX_TOKENS") finishReason = "length"
-+              else if (reason === "SAFETY") finishReason = "content-filter"
-+              else if (reason === "RECITATION") finishReason = "content-filter"
-+              else if (reason === "OTHER") finishReason = "other"
++              finishReason = self.mapFinishReason(candidate.finishReason, activeToolCall)
 +            }
 +          },
 +          flush(controller) {
@@ -256,13 +295,29 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +              usage: {
 +                inputTokens: usage?.promptTokenCount ?? 0,
 +                outputTokens: usage?.candidatesTokenCount ?? 0,
-+                totalTokens: usage?.totalTokenCount ?? 0,
 +              },
 +            })
 +          },
 +        }),
 +      ),
++      response: { headers: responseHeaders },
 +    }
++  }
++
++  private mapFinishReason(
++    reason: string | undefined,
++    toolCall?: string | null,
++  ): LanguageModelV3GenerateResult["finishReason"] {
++    if (toolCall) return { unified: "tool-calls", raw: undefined }
++    if (!reason) return { unified: "other", raw: undefined }
++
++    let unified: LanguageModelV3GenerateResult["finishReason"]["unified"] = "other"
++    if (reason === "STOP") unified = "stop"
++    else if (reason === "MAX_TOKENS") unified = "length"
++    else if (reason === "SAFETY") unified = "content-filter"
++    else if (reason === "RECITATION") unified = "content-filter"
++    else if (reason === "OTHER") unified = "other"
++    return { unified, raw: reason }
 +  }
 +
 +  private async ensureAuthenticated(): Promise<void> {
@@ -294,7 +349,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +          refresh_token: this.credentials.refresh_token,
 +          grant_type: "refresh_token",
 +        },
-+        failedResponseHandler: createJsonResponseHandler(z.any()),
++        failedResponseHandler: this.failedResponseHandler,
 +        successfulResponseHandler: createJsonResponseHandler(
 +          z.object({
 +            access_token: z.string(),
@@ -380,7 +435,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +        url: `${this.config.baseURL}:${method}`,
 +        headers: { Authorization: `Bearer ${this.credentials?.access_token}` },
 +        body,
-+        failedResponseHandler: createJsonResponseHandler(z.any()),
++        failedResponseHandler: this.failedResponseHandler,
 +        successfulResponseHandler: createJsonResponseHandler(z.any()),
 +        fetch: this.config.fetch,
 +      })
@@ -395,7 +450,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +    }
 +  }
 +
-+  private async prepareRequest(options: Parameters<LanguageModelV2["doGenerate"] | LanguageModelV2["doStream"]>[0]) {
++  private async prepareRequest(options: LanguageModelV3CallOptions) {
 +    await this.ensureAuthenticated()
 +    await this.discoverProjectId()
 +
@@ -436,61 +491,74 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +    return { headers, body }
 +  }
 +
-+  private mapPromptToGemini(prompt: LanguageModelV2Prompt) {
++  private mapPromptToGemini(prompt: LanguageModelV3Prompt) {
 +    let systemInstruction: any = undefined
 +    const contents: any[] = []
 +
 +    for (const message of prompt) {
-+      if (message.content.length < 1) continue
-+
-+      if (message.role === "system") {
-+        systemInstruction = {
-+          role: "user",
-+          parts: [{ text: message.content }],
-+        }
-+        continue
-+      }
-+
 +      const role = message.role === "assistant" ? "model" : "user"
-+      const parts: unknown[] = []
++      const parts: any[] = []
 +
 +      for (const part of message.content) {
-+        if (part.type === "text") {
-+          parts.push({ text: part.text })
-+        } else if (part.type === "file") {
-+          parts.push({
-+            inlineData: {
-+              mimeType: part.mediaType,
-+              data: part.data,
-+            },
-+          })
-+        } else if (part.type === "tool-call") {
-+          const thoughtSignature = part.providerOptions?.[this.provider]?.thoughtSignature
-+          parts.push({
-+            functionCall: {
-+              name: part.toolName,
-+              args: part.input,
-+            },
-+            thoughtSignature: thoughtSignature ?? "skip_thought_signature_validator",
-+          })
-+        } else if (part.type === "tool-result") {
-+          parts.push({
-+            functionResponse: {
-+              id: part.toolCallId,
-+              name: part.toolName,
-+              response: { output: part.output.value },
-+            },
-+          })
++        if (typeof part === "string") {
++          parts.push({ text: part })
++          continue
++        }
++
++        switch (part.type) {
++          case "text": {
++            if (message.role === "system") {
++              systemInstruction = {
++                role: "user",
++                parts: [{ text: part.text }],
++              }
++              continue
++            }
++            parts.push({ text: part.text })
++            break
++          }
++          case "file": {
++            parts.push({
++              inlineData: {
++                mimeType: part.mediaType,
++                data: part.data,
++              },
++            })
++            break
++          }
++          case "tool-call": {
++            const thoughtSignature = part.providerOptions?.[this.provider]?.thoughtSignature
++            parts.push({
++              functionCall: {
++                name: part.toolName,
++                args: part.input,
++              },
++              thoughtSignature: thoughtSignature ?? "skip_thought_signature_validator",
++            })
++            break
++          }
++          case "tool-result": {
++            parts.push({
++              functionResponse: {
++                id: part.toolCallId,
++                name: part.toolName,
++                response: { output: (part as any).output.value },
++              },
++            })
++            break
++          }
 +        }
 +      }
 +
-+      contents.push({ role, parts })
++      if (parts.length > 0) {
++        contents.push({ role, parts })
++      }
 +    }
 +
 +    return { systemInstruction, contents }
 +  }
 +
-+  private mapToolsToGemini(tools?: any[], toolChoice?: LanguageModelV2ToolChoice) {
++  private mapToolsToGemini(tools?: LanguageModelV3CallOptions["tools"], toolChoice?: LanguageModelV3ToolChoice) {
 +    if (!tools || tools.length === 0) return {}
 +
 +    const functionDeclarations = tools
@@ -676,8 +744,8 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +  const provider = (modelId: string) => createModel(modelId)
 +
 +  provider.languageModel = createModel
-+  provider.textEmbeddingModel = (modelId: string) => {
-+    throw new NoSuchModelError({ modelId, modelType: "textEmbeddingModel" })
++  provider.embeddingModel = (modelId: string) => {
++    throw new NoSuchModelError({ modelId, modelType: "embeddingModel" })
 +  }
 +  provider.imageModel = (modelId: string) => {
 +    throw new NoSuchModelError({ modelId, modelType: "imageModel" })
@@ -696,7 +764,7 @@ label export namespace ProviderTransform {
 +        return "gemini-cli"
        case "@ai-sdk/github-copilot":
          return "copilot"
-       case "@ai-sdk/openai":
+       case "@ai-sdk/azure":
 
 label export namespace ProviderTransform {
 
@@ -722,13 +790,14 @@ label export namespace ProviderTransform {
 +      input.model.api.npm === "@ai-sdk/google" ||
 +      input.model.api.npm === "@ai-sdk/google-vertex"
 +    ) {
-       result["thinkingConfig"] = {
-         includeThoughts: true,
-       }
-       if (input.model.api.id.includes("gemini-3")) {
-         result["thinkingConfig"]["thinkingLevel"] = "high"
-+      } else if (input.model.api.id.includes("gemini-2")) {
-+        result["thinkingConfig"]["thinkingBudget"] = 24576
+       if (input.model.capabilities.reasoning) {
+         result["thinkingConfig"] = {
+           includeThoughts: true,
+         }
+         if (input.model.api.id.includes("gemini-3")) {
+           result["thinkingConfig"]["thinkingLevel"] = "high"
++        } else if (input.model.api.id.includes("gemini-2")) {
++          result["thinkingConfig"]["thinkingBudget"] = 24576
+         }
        }
      }
- 
