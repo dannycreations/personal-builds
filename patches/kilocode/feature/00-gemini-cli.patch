@@ -38,18 +38,18 @@ label export namespace Provider {
 
 label export namespace Provider {
 
-   }
  
-   const CUSTOM_LOADERS: Record<string, CustomLoader> = {
-+    "gemini-cli": async () => {
-+      const config = await Config.get()
-+      const providerConfig = config.provider?.["gemini-cli"]
-+      const options = providerConfig?.options ?? {}
-+      return { autoload: true, options }
-+    },
-     async anthropic() {
-       return {
-         autoload: false,
+   function custom(dep: CustomDep): Record<string, CustomLoader> {
+     return {
++      "gemini-cli": Effect.fnUntraced(function* () {
++        const config = yield* dep.config()
++        const providerConfig = config.provider?.["gemini-cli"]
++        const options = providerConfig?.options ?? {}
++        return { autoload: true, options }
++      }),
+       anthropic: () =>
+         Effect.succeed({
+           autoload: false,
 
 file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 
