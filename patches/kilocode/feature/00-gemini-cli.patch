@@ -1,59 +1,61 @@
+file packages/opencode/src/kilocode/provider/provider.ts
+
+ // This module exports patch functions and data that the upstream provider.ts
+ // calls at well-defined injection points (each marked with kilocode_change).
+ 
++import { createGeminiCli } from "@/provider/sdk/gemini-cli"
+ import { createKilo, type KiloProvider, AI_SDK_PROVIDERS, PROMPTS } from "@kilocode/kilo-gateway"
+ import { DEFAULT_HEADERS } from "@/kilocode/const"
+ import { AiSdkProvider, Prompt } from "@/provider/models"
+
+label export const REQUEST_TIMEOUT_MS = 120_000 // 2 minutes
+
+ type BundledSDK = { languageModel(modelId: string): LanguageModelV3 }
+ 
+ export const KILO_BUNDLED_PROVIDERS: Record<string, () => Promise<(options: any) => BundledSDK>> = {
++  "gemini-cli": async () => createGeminiCli,
+   "@kilocode/kilo-gateway": async () => createKilo as unknown as (options: any) => BundledSDK,
+ }
+ 
+
 file packages/opencode/src/provider/models.ts
 
 +import { GEMINI_CLI_MODELS } from '@/provider/sdk/gemini-cli'
  import { Global } from "../global"
- import { Log } from "../util/log"
+ import { Log } from "../util"
  import path from "path"
 
-label export namespace ModelsDev {
+label export async function get() {
 
-     // kilocode_change start
-     const providers = result as Record<string, Provider>
+   // kilocode_change start
+   const providers = result as Record<string, Provider>
  
-+    if (!providers["gemini-cli"]) {
-+      // @ts-expect-error
-+      providers["gemini-cli"] = GEMINI_CLI_MODELS
-+    }
++  if (!providers["gemini-cli"]) {
++    providers["gemini-cli"] = GEMINI_CLI_MODELS
++  }
 +
-     if (providers["kilo"]) {
-       delete providers["kilo"]
-     }
+   if (providers["kilo"]) {
+     delete providers["kilo"]
+   }
 
 file packages/opencode/src/provider/provider.ts
-
-+import { createGeminiCli } from "./sdk/gemini-cli"
- import z from "zod"
- import os from "os"
- import fuzzysort from "fuzzysort"
-
-label export namespace Provider {
-
-   }
- 
-   const BUNDLED_PROVIDERS: Record<string, (options: any) => BundledSDK> = {
-+    "gemini-cli": createGeminiCli,
-     "@ai-sdk/amazon-bedrock": createAmazonBedrock,
-     "@ai-sdk/anthropic": createAnthropic,
-     "@ai-sdk/azure": createAzure,
-
-label export namespace Provider {
+label function useLanguageModel(sdk: any) {
 
  
-   function custom(dep: CustomDep): Record<string, CustomLoader> {
-     return {
-+      "gemini-cli": Effect.fnUntraced(function* () {
-+        const config = yield* dep.config()
-+        const providerConfig = config.provider?.["gemini-cli"]
-+        const options = providerConfig?.options ?? {}
-+        return { autoload: true, options }
-+      }),
-       anthropic: () =>
-         Effect.succeed({
-           autoload: false,
+ function custom(dep: CustomDep): Record<string, CustomLoader> {
+   return {
++    "gemini-cli": Effect.fnUntraced(function* () {
++      const config = yield* dep.config()
++      const providerConfig = config.provider?.["gemini-cli"]
++      const options = providerConfig?.options ?? {}
++      return { autoload: true, options }
++    }),
+     anthropic: () =>
+       Effect.succeed({
+         autoload: false,
 
 file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 
-+import { Env } from "@/env"
 +import {
 +  type LanguageModelV3,
 +  type LanguageModelV3CallOptions,
@@ -74,7 +76,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +import { arch, homedir, platform } from "node:os"
 +import { dirname, join } from "node:path"
 +import { z } from "zod/v4"
-+import { Installation } from "../../../installation"
++import { InstallationVersion } from "../../../installation/version"
 +
 +const geminiErrorSchema = z.object({
 +  error: z.object({
@@ -322,7 +324,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +
 +  private async ensureAuthenticated(): Promise<void> {
 +    if (!this.credentials) {
-+      let geminiCliOAuthPath = this.config.geminiCliOAuthPath || Env.get("GOOGLE_OAUTH_PATH")
++      let geminiCliOAuthPath = this.config.geminiCliOAuthPath || process.env.GOOGLE_OAUTH_PATH
 +      if (!geminiCliOAuthPath) {
 +        try {
 +          const content = await Bun.file(join(dirname(OAUTH_DEFAULT_PATH), ".env")).text()
@@ -379,7 +381,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +      return
 +    }
 +
-+    const projectId = Env.get("GOOGLE_CLOUD_PROJECT")
++    const projectId = process.env.GOOGLE_CLOUD_PROJECT
 +    if (projectId) {
 +      this.projectId = projectId
 +      return
@@ -483,7 +485,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +    const headers = combineHeaders(
 +      {
 +        Authorization: `Bearer ${this.credentials?.access_token}`,
-+        "User-Agent": `GeminiCLI/${Installation.VERSION}/${this.modelId} (${platform()}; ${arch()})`,
++        "User-Agent": `GeminiCLI/${InstallationVersion}/${this.modelId} (${platform()}; ${arch()})`,
 +      },
 +      options.headers,
 +    )
@@ -755,49 +757,49 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +}
 
 file packages/opencode/src/provider/transform.ts
-label export namespace ProviderTransform {
+label export const OUTPUT_TOKEN_MAX = Flag.KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_00
 
-   // Maps npm package to the key the AI SDK expects for providerOptions
-   function sdkKey(npm: string): string | undefined {
-     switch (npm) {
-+      case "gemini-cli":
-+        return "gemini-cli"
-       case "@ai-sdk/github-copilot":
-         return "copilot"
-       case "@ai-sdk/azure":
+ // Maps npm package to the key the AI SDK expects for providerOptions
+ function sdkKey(npm: string): string | undefined {
+   switch (npm) {
++    case "gemini-cli":
++      return "gemini-cli"
+     case "@ai-sdk/github-copilot":
+       return "copilot"
+     case "@ai-sdk/azure":
 
-label export namespace ProviderTransform {
+label export function options(input: {
 
-   }): Record<string, any> {
-     const result: Record<string, any> = {}
+ }): Record<string, any> {
+   const result: Record<string, any> = {}
  
-+    if (input.model.api.npm === "gemini-cli") {
-+      result["session_id"] = input.sessionID
-+    }
++  if (input.model.api.npm === "gemini-cli") {
++    result["session_id"] = input.sessionID
++  }
 +
-     // openai and providers using openai package should set store to false by default.
-     if (
-       input.model.providerID === "openai" ||
+   // openai and providers using openai package should set store to false by default.
+   if (
+     input.model.providerID === "openai" ||
 
-label export namespace ProviderTransform {
+label export function options(input: {
 
-       result["promptCacheKey"] = input.sessionID
-     }
+     result["promptCacheKey"] = input.sessionID
+   }
  
--    if (input.model.api.npm === "@ai-sdk/google" || input.model.api.npm === "@ai-sdk/google-vertex") {
-+    if (
-+      input.model.api.npm === "gemini-cli" ||
-+      input.model.api.npm === "@ai-sdk/google" ||
-+      input.model.api.npm === "@ai-sdk/google-vertex"
-+    ) {
-       if (input.model.capabilities.reasoning) {
-         result["thinkingConfig"] = {
-           includeThoughts: true,
-         }
-         if (input.model.api.id.includes("gemini-3")) {
-           result["thinkingConfig"]["thinkingLevel"] = "high"
-+        } else if (input.model.api.id.includes("gemini-2")) {
-+          result["thinkingConfig"]["thinkingBudget"] = 24576
-         }
+-  if (input.model.api.npm === "@ai-sdk/google" || input.model.api.npm === "@ai-sdk/google-vertex") {
++  if (
++    input.model.api.npm === "gemini-cli" ||
++    input.model.api.npm === "@ai-sdk/google" ||
++    input.model.api.npm === "@ai-sdk/google-vertex"
++  ) {
+     if (input.model.capabilities.reasoning) {
+       result["thinkingConfig"] = {
+         includeThoughts: true,
+       }
+       if (input.model.api.id.includes("gemini-3")) {
+         result["thinkingConfig"]["thinkingLevel"] = "high"
++      } else if (input.model.api.id.includes("gemini-2")) {
++        result["thinkingConfig"]["thinkingBudget"] = 24576
        }
      }
+   }
