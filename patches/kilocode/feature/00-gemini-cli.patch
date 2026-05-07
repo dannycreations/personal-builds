@@ -21,8 +21,8 @@ label export const REQUEST_TIMEOUT_MS = 120_000 // 2 minutes
 file packages/opencode/src/provider/models.ts
 
 +import { GEMINI_CLI_MODELS } from '@/provider/sdk/gemini-cli'
- import { Global } from "../global"
- import { Log } from "../util"
+ import { Global } from "@opencode-ai/core/global"
+ import * as Log from "@opencode-ai/core/util/log"
  import path from "path"
 
 label export async function get() {
@@ -72,11 +72,11 @@ file packages/opencode/src/provider/sdk/gemini-cli/gemini-cli.ts
 +  type FetchFunction,
 +  type ResponseHandler,
 +} from "@ai-sdk/provider-utils"
++import { InstallationVersion } from "@opencode-ai/core/installation/version"
 +import { APICallError } from "ai"
 +import { arch, homedir, platform } from "node:os"
 +import { dirname, join } from "node:path"
 +import { z } from "zod/v4"
-+import { InstallationVersion } from "../../../installation/version"
 +
 +const geminiErrorSchema = z.object({
 +  error: z.object({
@@ -770,8 +770,8 @@ label export const OUTPUT_TOKEN_MAX = Flag.KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX ||
 
 label export function options(input: {
 
- }): Record<string, any> {
-   const result: Record<string, any> = {}
+     result["toolStreaming"] = false
+   }
  
 +  if (input.model.api.npm === "gemini-cli") {
 +    result["session_id"] = input.sessionID
