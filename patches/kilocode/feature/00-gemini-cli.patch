@@ -20,23 +20,23 @@ label export const REQUEST_TIMEOUT_MS = 120_000 // 2 minutes
 
 file packages/opencode/src/provider/models.ts
 
-+import { GEMINI_CLI_MODELS } from '@/provider/sdk/gemini-cli'
++import { GEMINI_CLI_MODELS } from "@/provider/sdk/gemini-cli"
  import { Global } from "@opencode-ai/core/global"
- import * as Log from "@opencode-ai/core/util/log"
  import path from "path"
+ import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
 
-label export async function get() {
+label export const layer: Layer.Layer<Service, never, AppFileSystem.Service | HttpClie
 
-   // kilocode_change start
-   const providers = result as Record<string, Provider>
- 
-+  if (!providers["gemini-cli"]) {
-+    providers["gemini-cli"] = GEMINI_CLI_MODELS
-+  }
+     // kilocode_change start
+     const get = Effect.fn("ModelsDev.get")(function* () {
+       const providers = { ...(yield* cachedGet) }
++      if (!providers["gemini-cli"]) {
++        providers["gemini-cli"] = GEMINI_CLI_MODELS
++      }
 +
-   if (providers["kilo"]) {
-     delete providers["kilo"]
-   }
+       delete providers["kilo"]
+ 
+       const config = yield* Effect.promise(() => Config.get())
 
 file packages/opencode/src/provider/provider.ts
 label function useLanguageModel(sdk: any) {
