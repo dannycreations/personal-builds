@@ -8,7 +8,7 @@ file packages/opencode/src/kilocode/provider/provider.ts
  import { DEFAULT_HEADERS } from "@/kilocode/const"
  import { ProviderID, ModelID } from "@/provider/schema"
 
-label export const REQUEST_TIMEOUT_MS = 120_000 // 2 minutes
+label export const REQUEST_TIMEOUT_MS = 300_000 // 5 minutes
 
  type BundledSDK = { languageModel(modelId: string): LanguageModelV3 }
  
@@ -25,7 +25,7 @@ file packages/opencode/src/provider/models.ts
  import path from "path"
  import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
 
-label export const layer: Layer.Layer<Service, never, AppFileSystem.Service | HttpClie
+label export const layer: Layer.Layer<Service, never, Requirements> = Layer.effect(
 
      // kilocode_change start
      const get = Effect.fn("ModelsDev.get")(function* () {
@@ -36,10 +36,10 @@ label export const layer: Layer.Layer<Service, never, AppFileSystem.Service | Ht
 +
        delete providers["kilo"]
  
-       const config = yield* Effect.promise(() => Config.get())
+       const config = yield* cfg.get()
 
 file packages/opencode/src/provider/provider.ts
-label function useLanguageModel(sdk: any) {
+label function selectAzureLanguageModel(sdk: any, modelID: string, useChat: boolean) {
 
  
  function custom(dep: CustomDep): Record<string, CustomLoader> {
@@ -757,7 +757,7 @@ file packages/opencode/src/provider/sdk/gemini-cli/index.ts
 +}
 
 file packages/opencode/src/provider/transform.ts
-label export const OUTPUT_TOKEN_MAX = Flag.KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_00
+label export function sanitizeSurrogates(content: string) {
 
  // Maps npm package to the key the AI SDK expects for providerOptions
  function sdkKey(npm: string): string | undefined {
