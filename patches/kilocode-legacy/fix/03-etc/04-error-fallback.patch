@@ -1,0 +1,325 @@
+file src/api/providers/fetchers/modelCache.ts
+label export /*kilocode_change*/ async function readModels(router: RouterName): Promis
+
+ async function fetchModelsFromProvider(options: GetModelsOptions): Promise<ModelRecord> {
+ 	const { provider } = options
+ 
+-	let models: ModelRecord
+-	switch (provider) {
+-		case "openrouter":
+-			// kilocode_change start: base url and bearer token
+-			models = await getOpenRouterModels({
+-				openRouterBaseUrl: options.baseUrl,
+-				headers: options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : undefined,
+-			})
+-			// kilocode_change end
+-			break
+-		case "zenmux":
+-			models = await getZenmuxModels({
+-				openRouterBaseUrl: options.baseUrl || "https://zenmux.ai/api/v1",
+-				headers: options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : undefined,
+-			})
+-			break
+-		case "requesty":
+-			// Requesty models endpoint requires an API key for per-user custom policies.
+-			models = await getRequestyModels(options.baseUrl, options.apiKey)
+-			break
+-		// kilocode_change start
+-		case "glama":
+-			models = await getGlamaModels()
+-			break
+-		// kilocode_change end
+-		case "unbound":
+-			// Unbound models endpoint requires an API key to fetch application specific models.
+-			models = await getUnboundModels(options.apiKey)
+-			break
+-		case "litellm":
+-			// Type safety ensures apiKey and baseUrl are always provided for LiteLLM.
+-			models = await getLiteLLMModels(options.apiKey ?? "", options.baseUrl ?? "") // kilocode_change: null coalescing
+-			break
+-		// kilocode_change start
+-		case "kilocode": {
+-			const backendUrl = options.kilocodeOrganizationId
+-				? `https://api.kilo.ai/api/organizations/${options.kilocodeOrganizationId}`
+-				: "https://api.kilo.ai/api/openrouter"
+-			const openRouterBaseUrl = getKiloUrlFromToken(backendUrl, options.kilocodeToken ?? "")
+-			models = await getOpenRouterModels({
+-				openRouterBaseUrl,
+-				headers: options.kilocodeToken ? { Authorization: `Bearer ${options.kilocodeToken}` } : undefined,
+-			})
+-			break
+-		}
+-		case "synthetic":
+-			models = await getSyntheticModels(options.apiKey)
+-			break
+-		case "gemini":
+-			models = await getGeminiModels({
+-				apiKey: options.apiKey,
+-				baseUrl: options.baseUrl,
+-			})
+-			break
+-		// kilocode_change end
+-		case "ollama":
+-			models = await getOllamaModels(options.baseUrl, options.apiKey, options.numCtx /*kilocode_change*/)
+-			break
+-		case "lmstudio":
+-			models = await getLMStudioModels(options.baseUrl)
+-			break
+-		case "deepinfra":
+-			models = await getDeepInfraModels(options.apiKey, options.baseUrl)
+-			break
+-		case "io-intelligence":
+-			models = await getIOIntelligenceModels(options.apiKey)
+-			break
+-		case "vercel-ai-gateway":
+-			models = await getVercelAiGatewayModels()
+-			break
+-		case "huggingface":
+-			models = await getHuggingFaceModels()
+-			break
+-		// kilocode_change start
+-		case "oca":
+-			models = await getOCAModels(options.baseUrl ?? DEFAULT_OCA_BASE_URL, options.apiKey)
+-			break
+-		// kilocode_change end
+-		// kilocode_change start
+-		case "sap-ai-core":
+-			models = await getSapAiCoreModels(
+-				options.sapAiCoreServiceKey,
+-				options.sapAiCoreResourceGroup,
+-				options.sapAiCoreUseOrchestration,
+-			)
+-			break
+-		case "inception":
+-			models = await getInceptionModels()
+-			break
+-		case "ovhcloud":
+-			models = await getOvhCloudAiEndpointsModels()
+-			break
+-		case "apertis":
+-			models = await getApertisModels({
+-				apiKey: options.apiKey,
+-				baseUrl: options.baseUrl,
+-			})
+-			break
+-		// kilocode_change end
+-		case "roo": {
+-			// Roo Code Cloud provider requires baseUrl and optional apiKey
+-			const rooBaseUrl = options.baseUrl ?? process.env.ROO_CODE_PROVIDER_URL ?? "https://api.roocode.com/proxy"
+-			models = await getRooModels(rooBaseUrl, options.apiKey)
+-			break
+-		}
+-		case "chutes":
+-			models = await getChutesModels(options.apiKey)
+-			break
+-		//kilocode_change start
+-		case "nano-gpt":
+-			models = await getNanoGptModels({
+-				nanoGptModelList: options.nanoGptModelList,
+-				apiKey: options.apiKey,
+-			})
+-			break
+-		case "aihubmix":
+-			models = await getAihubmixModels({
+-				baseUrl: options.baseUrl,
+-				apiKey: options.apiKey,
+-			})
+-			break
+-		//kilocode_change end
+-		// kilocode_change start
+-		case "poe":
+-			models = await getPoeModels(options.apiKey)
+-			break
+-		// kilocode_change end
+-		default: {
+-			// Ensures router is exhaustively checked if RouterName is a strict union.
+-			const exhaustiveCheck: never = provider
+-			throw new Error(`Unknown provider: ${exhaustiveCheck}`)
+-		}
+-	}
++	let models: ModelRecord = {}
++  try {
++    switch (provider) {
++      case "openrouter":
++        // kilocode_change start: base url and bearer token
++        models = await getOpenRouterModels({
++          openRouterBaseUrl: options.baseUrl,
++          headers: options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : undefined,
++        })
++        // kilocode_change end
++        break
++      case "zenmux":
++        models = await getZenmuxModels({
++          openRouterBaseUrl: options.baseUrl || "https://zenmux.ai/api/v1",
++          headers: options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : undefined,
++        })
++        break
++      case "requesty":
++        // Requesty models endpoint requires an API key for per-user custom policies.
++        models = await getRequestyModels(options.baseUrl, options.apiKey)
++        break
++      // kilocode_change start
++      case "glama":
++        models = await getGlamaModels()
++        break
++      // kilocode_change end
++      case "unbound":
++        // Unbound models endpoint requires an API key to fetch application specific models.
++        models = await getUnboundModels(options.apiKey)
++        break
++      case "litellm":
++        // Type safety ensures apiKey and baseUrl are always provided for LiteLLM.
++        models = await getLiteLLMModels(options.apiKey ?? "", options.baseUrl ?? "") // kilocode_change: null coalescing
++        break
++      // kilocode_change start
++      case "kilocode": {
++        const backendUrl = options.kilocodeOrganizationId
++          ? `https://api.kilo.ai/api/organizations/${options.kilocodeOrganizationId}`
++          : "https://api.kilo.ai/api/openrouter"
++        const openRouterBaseUrl = getKiloUrlFromToken(backendUrl, options.kilocodeToken ?? "")
++        models = await getOpenRouterModels({
++          openRouterBaseUrl,
++          headers: options.kilocodeToken ? { Authorization: `Bearer ${options.kilocodeToken}` } : undefined,
++        })
++        break
++      }
++      case "synthetic":
++        models = await getSyntheticModels(options.apiKey)
++        break
++      case "gemini":
++        models = await getGeminiModels({
++          apiKey: options.apiKey,
++          baseUrl: options.baseUrl,
++        })
++        break
++      // kilocode_change end
++      case "ollama":
++        models = await getOllamaModels(options.baseUrl, options.apiKey, options.numCtx /*kilocode_change*/)
++        break
++      case "lmstudio":
++        models = await getLMStudioModels(options.baseUrl)
++        break
++      case "deepinfra":
++        models = await getDeepInfraModels(options.apiKey, options.baseUrl)
++        break
++      case "io-intelligence":
++        models = await getIOIntelligenceModels(options.apiKey)
++        break
++      case "vercel-ai-gateway":
++        models = await getVercelAiGatewayModels()
++        break
++      case "huggingface":
++        models = await getHuggingFaceModels()
++        break
++      // kilocode_change start
++      case "oca":
++        models = await getOCAModels(options.baseUrl ?? DEFAULT_OCA_BASE_URL, options.apiKey)
++        break
++      // kilocode_change end
++      // kilocode_change start
++      case "sap-ai-core":
++        models = await getSapAiCoreModels(
++          options.sapAiCoreServiceKey,
++          options.sapAiCoreResourceGroup,
++          options.sapAiCoreUseOrchestration,
++        )
++        break
++      case "inception":
++        models = await getInceptionModels()
++        break
++      case "ovhcloud":
++        models = await getOvhCloudAiEndpointsModels()
++        break
++      case "apertis":
++        models = await getApertisModels({
++          apiKey: options.apiKey,
++          baseUrl: options.baseUrl,
++        })
++        break
++      // kilocode_change end
++      case "roo": {
++        // Roo Code Cloud provider requires baseUrl and optional apiKey
++        const rooBaseUrl = options.baseUrl ?? process.env.ROO_CODE_PROVIDER_URL ?? "https://api.roocode.com/proxy"
++        models = await getRooModels(rooBaseUrl, options.apiKey)
++        break
++      }
++      case "chutes":
++        models = await getChutesModels(options.apiKey)
++        break
++      //kilocode_change start
++      case "nano-gpt":
++        models = await getNanoGptModels({
++          nanoGptModelList: options.nanoGptModelList,
++          apiKey: options.apiKey,
++        })
++        break
++      case "aihubmix":
++        models = await getAihubmixModels({
++          baseUrl: options.baseUrl,
++          apiKey: options.apiKey,
++        })
++        break
++      //kilocode_change end
++      // kilocode_change start
++      case "poe":
++        models = await getPoeModels(options.apiKey)
++        break
++      // kilocode_change end
++      default: {
++        // Ensures router is exhaustively checked if RouterName is a strict union.
++        const exhaustiveCheck: never = provider
++        throw new Error(`Unknown provider: ${exhaustiveCheck}`)
++      }
++    }
++  } catch {}
+ 
+ 	return models
+ }
+
+label export const getModels = async (options: GetModelsOptions): Promise<ModelRecord>
+
+ 
+ 		return models
+ 	} catch (error) {
+-		// Log the error and re-throw it so the caller can handle it (e.g., show a UI message).
+-		console.error(`[getModels] Failed to fetch models in modelCache for ${provider}:`, error)
+-
+-		throw error // Re-throw the original error to be handled by the caller.
++		return getModelsFromCache(provider) || {}
+ 	}
+ }
+ 
+
+file src/services/ripgrep/index.ts
+label export async function getBinPath(vscodeAppRoot: string): Promise<string | undefi
+
+ 		return (await fileExistsAtPath(fullPath)) ? fullPath : undefined
+ 	}
+ 
+-	return (
++	const foundPath =
+ 		(await checkPath("node_modules/@vscode/ripgrep/bin/")) ||
+ 		(await checkPath("node_modules/vscode-ripgrep/bin")) ||
+ 		(await checkPath("node_modules.asar.unpacked/vscode-ripgrep/bin/")) ||
+ 		(await checkPath("node_modules.asar.unpacked/@vscode/ripgrep/bin/")) ||
+ 		(await checkBunPath(vscodeAppRoot, binName)) // kilocode_change
+-	)
++
++	if (foundPath) {
++		return foundPath
++	}
++
++	try {
++		const result = childProcess.spawnSync(isWindows ? "where" : "which", [binName], { encoding: "utf8" })
++		if (result.status === 0 && result.stdout) {
++			const pathFromPath = result.stdout.split("\n")[0].trim()
++			if (await fileExistsAtPath(pathFromPath)) {
++				return pathFromPath
++			}
++		}
++	} catch {}
++
++	return undefined
+ }
+ 
+ async function execRipgrep(bin: string, args: string[]): Promise<string> {
