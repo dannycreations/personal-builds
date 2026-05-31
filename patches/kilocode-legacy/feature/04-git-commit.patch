@@ -250,7 +250,7 @@ label Requirements:
 +	BREAKING CHANGE: remove the \`login\` endpoint, migrate to OAuth2.
 +	\`\`\`
 +	
-+	Additional mandatory instructions: "\${additionalInstructions}".
++	Additional user-provided context: "\${additionalInstructions}".
 +	
 +	\${gitContext}`,
 +		},

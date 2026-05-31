@@ -1,0 +1,85 @@
+file src/core/task-persistence/taskMetadata.ts
+label export type TaskMetadataOptions = {
+
+ 	rootTaskId?: string
+ 	parentTaskId?: string
+ 	taskNumber: number
++	task?: string
+ 	messages: ClineMessage[]
+ 	globalStoragePath: string
+ 	workspace: string
+
+label export async function taskMetadata({
+
+ 	rootTaskId,
+ 	parentTaskId,
+ 	taskNumber,
++	task,
+ 	messages,
+ 	globalStoragePath,
+ 	workspace,
+
+label export async function taskMetadata({
+
+ 		ts: timestamp,
+ 		task: hasMessages
+ 			? taskMessage!.text?.trim() || t("common:tasks.incomplete", { taskNumber })
+-			: t("common:tasks.no_messages", { taskNumber }),
++			: task || t("common:tasks.no_messages", { taskNumber }),
+ 		tokensIn: tokenUsage.totalTokensIn,
+ 		tokensOut: tokenUsage.totalTokensOut,
+ 		cacheWrites: tokenUsage.totalCacheWrites,
+
+file src/core/task/Task.ts
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 				parentTaskId: this.parentTaskId,
+ 				taskNumber: this.taskNumber,
+ 				messages: this.clineMessages,
++				task: this.metadata.task, // kilocode_change: pass original task text to handle case where clineMessages is empty during initial cancellation
+ 				globalStoragePath: this.globalStoragePath,
+ 				workspace: this.cwd,
+ 				mode: this._taskMode || defaultModeSlug, // Use the task's own mode, not the current provider mode.
+
+file src/core/webview/ClineProvider.ts
+label export class ClineProvider
+
+ 
+ 		console.log(`[cancelTask] cancelling task ${task.taskId}.${task.instanceId}`)
+ 
+-		const { historyItem, uiMessagesFilePath } = await this.getTaskWithId(task.taskId)
+-
+ 		// Preserve parent and root task information for history item.
+ 		const rootTask = task.rootTask
+ 		const parentTask = task.parentTask
+ 
+ 		// Mark this as a user-initiated cancellation so provider-only rehydration can occur
+ 		task.abortReason = "user_cancelled"
+ 
+ 		// Capture the current instance to detect if rehydrate already occurred elsewhere
+ 		const originalInstanceId = task.instanceId
+ 
+ 		// Immediately cancel the underlying HTTP request if one is in progress
+ 		// This ensures the stream fails quickly rather than waiting for network timeout
+ 		task.cancelCurrentRequest()
+ 
+-		// Begin abort (non-blocking)
+-		task.abortTask()
++		// Abort the running task and wait for it to finish its cleanup (including saving messages to disk)
++		// This prevents race conditions where we rehydrate from stale or partially written history.
++		await task.abortTask()
+ 
+ 		// Immediately mark the original instance as abandoned to prevent any residual activity
+ 		task.abandoned = true
+
+label export class ClineProvider
+
+ 			}
+ 		}
+ 
++		// Fetch the latest history item AFTER aborting to ensure we have up-to-date metadata (token usage, etc.)
++		const { historyItem } = await this.getTaskWithId(task.taskId)
++
+ 		// Clears task again, so we need to abortTask manually above.
+ 		await this.createTaskWithHistoryItem({ ...historyItem, rootTask, parentTask })
+ 	}

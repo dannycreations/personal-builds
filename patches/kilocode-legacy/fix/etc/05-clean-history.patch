@@ -1,0 +1,83 @@
+file src/core/task/Task.ts
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 		if (partial !== undefined) {
+ 			const lastMessage = this.clineMessages.at(-1)
+ 
++			if (!text || text.trim().length === 0) {
++				if (partial === false) {
++					if (lastMessage && lastMessage.partial && lastMessage.type === "ask" && lastMessage.ask === type) {
++						this.clineMessages.pop()
++						await this.saveClineMessages()
++						await this.providerRef.deref()?.postStateToWebview()
++					}
++					return { response: "noButtonClicked" as ClineAskResponse }
++				} else if (partial === true) {
++					const isUpdatingPreviousPartial =
++						lastMessage && lastMessage.partial && lastMessage.type === "ask" && lastMessage.ask === type
++					if (!isUpdatingPreviousPartial) {
++						throw new AskIgnoredError("new empty partial")
++					}
++				}
++			}
++
+ 			const isUpdatingPreviousPartial =
+ 				lastMessage && lastMessage.partial && lastMessage.type === "ask" && lastMessage.ask === type
+ 
+
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 			throw new Error(`[Kilo Code#say] task ${this.taskId}.${this.instanceId} aborted`)
+ 		}
+ 
++		if (type === "text" && (!text || text.trim().length === 0) && (!images || images.length === 0)) {
++			if (partial === false || partial === undefined) {
++				const lastMessage = this.clineMessages.at(-1)
++				if (lastMessage && lastMessage.partial && lastMessage.type === "say" && lastMessage.say === type) {
++					this.clineMessages.pop()
++					await this.saveClineMessages()
++					await this.providerRef.deref()?.postStateToWebview()
++				}
++				return
++			} else if (partial === true) {
++				const lastMessage = this.clineMessages.at(-1)
++				const isUpdatingPreviousPartial =
++					lastMessage && lastMessage.partial && lastMessage.type === "say" && lastMessage.say === type
++				if (!isUpdatingPreviousPartial) {
++					return
++				}
++			}
++		}
++
+ 		if (partial !== undefined) {
+ 			const lastMessage = this.clineMessages.at(-1)
+ 
+
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 								break
+ 							}
+ 							case "text": {
++								if (chunk.text.trim().length === 0 && assistantMessage.length === 0) {
++									break
++								}
+ 								assistantMessage += chunk.text
+ 
+ 								// Use the protocol determined at the start of streaming
+
+label export class Task extends EventEmitter<TaskEvents> implements TaskLike {
+
+ 
+ 					// Build the assistant message content array
+ 					// kilocode_change start: preserve Anthropic reasoning
+-					const assistantContent: Array<Anthropic.ContentBlockParam> = []
+-					assistantContent.push(...antThinkingContent)
++					const assistantContent: Array<Anthropic.ContentBlockParam> = [...antThinkingContent]
+ 					// kilocode_change end
+ 
+ 					// Add text content if present
+-					if (assistantMessage) {
++					if (assistantMessage && assistantMessage.trim().length > 0) {
+ 						assistantContent.push({
+ 							type: "text" as const,
+ 							text: assistantMessage,
