@@ -53,8 +53,8 @@ jobs:
         working-directory: ${{ env.WORK_DIR }}
         run: |
           bun i -g @vscode/vsce && bun i
-          bun --cwd packages/opencode script/build.ts
-          bun --cwd packages/kilo-vscode script/build.ts
+          bun packages/opencode/script/build.ts
+          bun packages/kilo-vscode/script/build.ts
 
       - name: Package Build
         if: steps.check-changes.outputs.has-changes == 'true'
