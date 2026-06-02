@@ -1,0 +1,58 @@
+file src/core/assistant-message/presentAssistantMessage.ts
+label export async function presentAssistantMessage(cline: Task) {
+
+ 				// streaming could finish. If streaming is finished, and we're out of
+ 				// bounds then this means we already  presented/executed the last
+ 				// content block and are ready to continue to next request.
+-				if (cline.didCompleteReadingStream) {
+-					cline.userMessageContentReady = true
+-				}
+ 				break
+ 			}
+ 
+
+label export async function presentAssistantMessage(cline: Task) {
+
+ 					// true when out of bounds. This gracefully allows the stream to
+ 					// continue on and all potential content blocks be presented.
+ 					// Last block is complete and it is finished executing
+-					cline.userMessageContentReady = true // Will allow `pWaitFor` to continue.
+ 				}
+ 
+ 				// Call next block if it exists (if not then read stream will call it
+ 				// when it's ready).
+ 				// Need to increment regardless, so when read stream calls this function
+ 				// again it will be streaming the next block.
+ 				cline.currentStreamingContentIndex++
+ 
+ 				if (cline.currentStreamingContentIndex < cline.assistantMessageContent.length) {
+ 					// There are already more content blocks to stream, so we'll continue the loop.
+ 					continue
+-				} else {
+-					// CRITICAL FIX: If we're out of bounds and the stream is complete, set userMessageContentReady
+-					// This handles the case where assistantMessageContent is empty or becomes empty after processing
+-					if (cline.didCompleteReadingStream) {
+-						cline.userMessageContentReady = true
+-					}
+ 				}
+ 			}
+ 
+ 			// Block was partial or just finished, but more updates arrived while we were locked.
+ 			if (cline.presentAssistantMessageHasPendingUpdates) {
+ 				continue
+ 			}
+ 
+ 			// Loop is done
+ 			break
+ 		}
++
++		// If we've processed all content blocks and the stream is complete,
++		// signal that we're ready for the next turn.
++		// Moving this here ensures RMCR doesn't proceed to next turn (and reset index/content)
++		// until this PAM loop has completely finished including all pending updates.
++		if (cline.didCompleteReadingStream && cline.currentStreamingContentIndex >= cline.assistantMessageContent.length) {
++			cline.userMessageContentReady = true
++		}
+ 	} finally {
+ 		cline.presentAssistantMessageLocked = false
+ 	}
