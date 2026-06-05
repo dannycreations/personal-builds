@@ -41,6 +41,12 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Setup Node Environment
+        if: steps.check-changes.outputs.has-changes == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+
       - name: Setup Bun Cache
         if: steps.check-changes.outputs.has-changes == 'true'
         uses: actions/cache@v5
@@ -53,8 +59,8 @@ jobs:
         working-directory: ${{ env.WORK_DIR }}
         run: |
           bun i -g @vscode/vsce && bun i
-          bun packages/opencode/script/build.ts
-          bun packages/kilo-vscode/script/build.ts
+          bun --cwd packages/opencode script/build.ts
+          bun --cwd packages/kilo-vscode script/build.ts
 
       - name: Package Build
         if: steps.check-changes.outputs.has-changes == 'true'
