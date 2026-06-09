@@ -293,11 +293,15 @@ label export const getModels = async (options: GetModelsOptions): Promise<ModelR
 file src/services/ripgrep/index.ts
 label export async function getBinPath(vscodeAppRoot: string): Promise<string | undefi
 
- 		return (await fileExistsAtPath(fullPath)) ? fullPath : undefined
- 	}
+ 	const universalBinFolder = `bin/${process.platform}-${process.arch}`
+ 	// kilocode_change end
  
 -	return (
 +	const foundPath =
+ 		// kilocode_change start
+ 		(await checkPath(`node_modules/@vscode/ripgrep-universal/${universalBinFolder}`)) ||
+ 		(await checkPath(`node_modules.asar.unpacked/@vscode/ripgrep-universal/${universalBinFolder}`)) ||
+ 		// kilocode_change end
  		(await checkPath("node_modules/@vscode/ripgrep/bin/")) ||
  		(await checkPath("node_modules/vscode-ripgrep/bin")) ||
  		(await checkPath("node_modules.asar.unpacked/vscode-ripgrep/bin/")) ||
