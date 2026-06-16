@@ -21,22 +21,22 @@ label export const REQUEST_TIMEOUT_MS = 300_000 // 5 minutes
 file packages/opencode/src/provider/models.ts
 
 +import { GEMINI_CLI_MODELS } from "@/provider/sdk/gemini-cli"
- // kilocode_change - adapt Kilo model assembly to the upstream core models service
+ // kilocode_change - new file
  import { Config } from "@/config/config"
  import { Auth } from "@/auth"
 
-label export const layer: Layer.Layer<
+label export const layer: Layer.Layer<Service, never, Core.Service | Config.Service |
 
  
-     const get = Effect.fn("ModelsDev.get")(function* () {
-       const providers = { ...(yield* core.get()) }
+       const get = Effect.fn("ModelsDev.get")(function* () {
+         const providers = { ...(yield* core.get()) }
 +      if (!providers["gemini-cli"]) {
 +        providers["gemini-cli"] = GEMINI_CLI_MODELS
 +      }
 +
-       delete providers.kilo
+         delete providers.kilo
  
-       const cfg = yield* config.get()
+         const cfg = yield* config.get()
 
 file packages/opencode/src/provider/provider.ts
 label function selectAzureLanguageModel(sdk: any, modelID: string, useChat: boolean) {
