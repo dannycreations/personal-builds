@@ -1,0 +1,110 @@
+file src/integrations/misc/line-counter.ts
+label export async function countFileLinesAndTokens(
+
+ 			lineBuffer.push(line)
+ 
+ 			// Process buffer when it reaches chunk size
+-			if (lineBuffer.length >= chunkLines && !isProcessing) {
+-				isProcessing = true
++			if (lineBuffer.length >= chunkLines) {
+ 				rl.pause()
+-				processBuffer()
+-					.then(() => {
+-						isProcessing = false
+-						if (!shouldClose) {
+-							rl.resume()
+-						}
+-					})
+-					.catch((err) => {
+-						isProcessing = false
+-						reject(err)
+-					})
++				if (!isProcessing) {
++					isProcessing = true
++					processNextChunks()
++				}
+ 			}
+ 		})
+ 
++		const processNextChunks = () => {
++			processBuffer()
++				.then(() => {
++					isProcessing = false
++					if (lineBuffer.length >= chunkLines) {
++						isProcessing = true
++						processNextChunks()
++					} else if (!shouldClose) {
++						rl.resume()
++					}
++				})
++				.catch((err) => {
++					isProcessing = false
++					reject(err)
++				})
++		}
++
+ 		rl.on("close", async () => {
+ 			// Wait for any ongoing processing to complete
+ 			while (isProcessing) {
+
+file src/integrations/misc/read-file-with-budget.ts
+label export async function readFileWithTokenBudget(
+
+ 		rl.on("line", (line) => {
+ 			lineBuffer.push(line)
+ 
+-			if (lineBuffer.length >= chunkLines && !isProcessing) {
+-				isProcessing = true
++			if (lineBuffer.length >= chunkLines) {
+ 				rl.pause()
++				if (!isProcessing) {
++					isProcessing = true
++					processNextChunks()
++				}
++			}
++		})
+ 
+-				processBuffer()
+-					.then((continueReading) => {
+-						isProcessing = false
+-						if (!continueReading) {
+-							shouldClose = true
+-							rl.close()
+-							readStream.destroy()
+-						} else if (!shouldClose) {
+-							rl.resume()
+-						}
+-					})
+-					.catch((err) => {
+-						isProcessing = false
++		const processNextChunks = () => {
++			processBuffer()
++				.then((continueReading) => {
++					isProcessing = false
++					if (!continueReading) {
+ 						shouldClose = true
+ 						rl.close()
+ 						readStream.destroy()
+-						reject(err)
+-					})
+-			}
+-		})
++					} else if (lineBuffer.length >= chunkLines) {
++						// There is still more than one chunk buffered, process again
++						isProcessing = true
++						processNextChunks()
++					} else if (!shouldClose) {
++						rl.resume()
++					}
++				})
++				.catch((err) => {
++					isProcessing = false
++					shouldClose = true
++					rl.close()
++					readStream.destroy()
++					reject(err)
++				})
++		}
+ 
+ 		rl.on("close", async () => {
+ 			// Wait for any ongoing processing with timeout
