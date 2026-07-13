@@ -238,21 +238,43 @@ label Requirements:
 -
 -Return ONLY the commit message in the conventional format, nothing else.`,
 -	},
-+			template: `Perform a mandatory and thorough audit of the entire \`git diff\` to synthesize a single, fully compliant Conventional Commit 1.0.0 message. If BREAKING CHANGES are detected, you shall add a \`!\` character immediately after the type or scope (e.g., \`type(scope)!:\`) to mark the breaking change in the header. The output should be extremely concise, unified, and enclosed in a code block, following the logical structure defined below without deviation.
-+	
-+	\`\`\`
-+	feat(core)!: add multi-factor authentication support
-+	
-+	- Remove reading and parsing of existing \`manifest.json\`.
-+	- Update cookbook to use \`upsert\` method for recipe management.
-+	- Adjust \`prepare\` script to run only \`husky\` without building.
-+	
-+	BREAKING CHANGE: remove the \`login\` endpoint, migrate to OAuth2.
-+	\`\`\`
-+	
-+	Additional user-provided context: "\${additionalInstructions}".
-+	
-+	\${gitContext}`,
++			template: `Review the entire \`git diff\`, then write a single commit message that fully complies with the Conventional Commits v1.0.0 specification.
++
++Formatting rules:
++
++1. If the diff includes a breaking change, add an exclamation mark (\`!\`) right after the \`type\` (and \`scope\`, if used) — for example, \`type(scope)!:\` — so it's visible in the header, the first line of the message.
++2. Keep the message short and cohesive.
++3. Put it inside a single code block.
++4. Follow the format shown in the example below.
++
++Every message starts with a \`type\` — the kind of change, chosen from the list below — and can optionally include a \`scope\` in parentheses that names the affected part of the project:
++
++- build: Changes the build system or external dependencies (example scopes: gulp, broccoli, npm)
++- chore: Performs routine maintenance, such as updating libraries, copyright notices, other repository settings, or dependencies
++- ci: Changes continuous integration (CI) configuration files or scripts (example scopes: Travis CI, CircleCI, GitHub Actions)
++- docs: Changes documentation only, such as fixing typos or adding new documentation
++- feat: Introduces a new feature to the codebase
++- fix: Fixes a bug in the codebase
++- perf: Improves performance
++- refactor: Changes code without fixing a bug or adding a new feature
++- style: Changes formatting only, without changing what the code does (e.g., whitespace, missing semicolons)
++- test: Adds missing tests or corrects existing ones
++
++Example:
++
++\`\`\`
++feat(core)!: add multi-factor authentication support
++
++- Remove reading and parsing of existing \`manifest.json\`.
++- Update cookbook to use \`upsert\` method for recipe management.
++- Adjust \`prepare\` script to run only \`husky\` without building.
++
++BREAKING CHANGE: remove the \`login\` endpoint, migrate to OAuth2.
++\`\`\`
++
++Additional user-provided context: "\${additionalInstructions}".
++
++\${gitContext}`,
 +		},
  	// kilocode_change end
  } as const

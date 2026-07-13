@@ -1,0 +1,180 @@
+file webview-ui/src/components/chat/ChatView.tsx
+label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
+
+ 	// Disable sticky follow when user scrolls up inside the chat container
+ 	const handleWheel = useCallback((event: Event) => {
+ 		const wheelEvent = event as WheelEvent
+-		if (wheelEvent.deltaY < 0 && scrollContainerRef.current?.contains(wheelEvent.target as Node)) {
+-			stickyFollowRef.current = false
++		if (wheelEvent.deltaY < 0) {
++			const virtuosoScroller = document.querySelector('[data-virtuoso-scroller="true"]')
++			if (virtuosoScroller?.contains(wheelEvent.target as Node)) {
++				stickyFollowRef.current = false
++			}
+ 		}
+ 	}, [])
+ 	useEvent("wheel", handleWheel, window, { passive: true })
+ 
+ 	// Also disable sticky follow when the chat container is scrolled away from bottom
+ 	useEffect(() => {
+-		const el = scrollContainerRef.current
++		const el = document.querySelector('[data-virtuoso-scroller="true"]')
+ 		if (!el) return
+ 		const onScroll = () => {
+ 			// Consider near-bottom within a small threshold consistent with Virtuoso settings
+ 			const nearBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 10
+ 			if (!nearBottom) {
+ 				stickyFollowRef.current = false
+ 			}
+ 			// Keep UI button state in sync with scroll position
+ 			setShowScrollToBottom(!nearBottom)
+ 		}
+ 		el.addEventListener("scroll", onScroll, { passive: true })
+ 		return () => el.removeEventListener("scroll", onScroll)
+-	}, [])
++	}, [groupedMessages]) // Re-run effect when messages change to bind to the current virtuoso element
+ 
+ 	//kilocode_change
+ 	// Effect to clear checkpoint warning when messages appear or task changes
+
+file webview-ui/src/components/chat/ChatView.tsx
+label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
+
+ 
+ 		// Update previous value.
+ 		setWasStreaming(isStreaming)
+-	}, [isStreaming, lastMessage, wasStreaming, messages.length])
++
++		if (isStreaming && (isAtBottom || stickyFollowRef.current)) {
++			stickyFollowRef.current = true
++		}
++	}, [isStreaming, lastMessage, wasStreaming, messages.length, isAtBottom])
+ 
+ 	// Compute current browser session messages for the top banner (not grouped into chat stream)
+ 	// Find the FIRST browser session from the beginning to show ALL sessions
+
+file webview-ui/src/kilocode/agent-manager/components/MessageList.tsx
+label export function MessageList({ sessionId }: MessageListProps) {
+
+ 		prevMessageCountRef.current = combinedMessages.length
+ 	}, [combinedMessages.length, isAtBottom, sessionId])
+ 
++	const isStreamingSession = useMemo(() => {
++		return sessionState === "streaming" || combinedMessages.some((msg) => msg.partial)
++	}, [sessionState, combinedMessages])
++
++
+ 	const handleSuggestionClick = useCallback(
+ 		(suggestion: SuggestionItem) => {
+ 			vscode.postMessage({
+
+label export function MessageList({ sessionId }: MessageListProps) {
+
+ 				atBottomStateChange={setIsAtBottom}
+ 				increaseViewportBy={{ top: 400, bottom: 400 }}
+ 				className="am-messages-list"
+-				followOutput={isAtBottom ? "smooth" : false}
++				followOutput={isAtBottom || (isStreamingSession && isAtBottom) ? "smooth" : false}
+ 			/>
+ 			{showScrollToBottom && (
+ 				<div className="am-scroll-to-bottom">
+
+file webview-ui/src/components/chat/ChatView.tsx
+label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
+
+ 	const prevExpandedRowsRef = useRef<Record<number, boolean>>()
+ 	const scrollContainerRef = useRef<HTMLDivElement>(null)
+ 	const stickyFollowRef = useRef<boolean>(false)
++	const previousScrollTopRef = useRef<number>(0) // kilocode_change
+ 	const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+ 	const [isAtBottom, setIsAtBottom] = useState(false)
+ 	const lastTtsRef = useRef<string>("")
+
+label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
+
+ 		}
+ 	}, [isStreaming, lastMessage, wasStreaming, messages.length, isAtBottom])
+ 
++	// kilocode_change start - Force scrolling to bottom on new stream chunks if sticky follow is active
++	useEffect(() => {
++		if (isStreaming && stickyFollowRef.current) {
++			const el = document.querySelector('[data-virtuoso-scroller="true"]')
++			if (el) {
++				el.scrollTop = el.scrollHeight
++			}
++		}
++	}, [isStreaming, messages.length])
++	// kilocode_change end
++
+ 	// Compute current browser session messages for the top banner (not grouped into chat stream)
+ 	// Find the FIRST browser session from the beginning to show ALL sessions
+ 	const browserSessionStartIndex = useMemo(() => {
+
+label const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
+
+ 	useEvent("wheel", handleWheel, window, { passive: true })
+ 
+ 	// Also disable sticky follow when the chat container is scrolled away from bottom
++	// kilocode_change start - ResizeObserver to keep scrolling to bottom when layout size changes (due to codeblocks, tool calls, images etc)
+ 	useEffect(() => {
+-		const el = document.querySelector('[data-virtuoso-scroller="true"]')
++		const el = document.querySelector('[data-virtuoso-scroller="true"]') as HTMLElement
+ 		if (!el) return
++
+ 		const onScroll = () => {
+ 			// Consider near-bottom within a small threshold consistent with Virtuoso settings
+-			const nearBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 10
+-			if (!nearBottom) {
+-				stickyFollowRef.current = false
++			// If we are currently near the bottom, make sure stickyFollowRef is active.
++			const currentScrollTop = el.scrollTop
++			const nearBottom = Math.abs(el.scrollHeight - currentScrollTop - el.clientHeight) < 30 // Increased threshold to 30px for better sticky tolerance
++			
++			if (nearBottom) {
++				stickyFollowRef.current = true
++			} else {
++				// Only turn off sticky follow if the user actually scrolled UP manually (not down).
++				// If currentScrollTop is less than previousScrollTop, user scrolled up.
++				if (currentScrollTop < previousScrollTopRef.current) {
++					stickyFollowRef.current = false
++				}
+ 			}
++			previousScrollTopRef.current = currentScrollTop
++
+ 			// Keep UI button state in sync with scroll position
+ 			setShowScrollToBottom(!nearBottom)
+ 		}
++
++		// Use ResizeObserver on the scroller's child container to detect when content size changes (e.g. codeblocks rendering/highlighting, tools rendering).
++		// When size changes and we are supposed to stick to bottom, enforce scrolling.
++		let resizeObserver: ResizeObserver | null = null
++		const scrollableContent = el.firstElementChild as HTMLElement
++		if (scrollableContent) {
++			resizeObserver = new ResizeObserver(() => {
++				if (stickyFollowRef.current) {
++					// Use requestAnimationFrame to avoid "ResizeObserver loop limit exceeded" warning
++					// and ensure layout has settled before scrolling.
++					requestAnimationFrame(() => {
++						if (el) {
++							el.scrollTop = el.scrollHeight
++						}
++					})
++				}
++			})
++			resizeObserver.observe(scrollableContent)
++		}
++
+ 		el.addEventListener("scroll", onScroll, { passive: true })
+-		return () => el.removeEventListener("scroll", onScroll)
+-	}, [groupedMessages]) // Re-run effect when messages change to bind to the current virtuoso element
++		return () => {
++			el.removeEventListener("scroll", onScroll)
++			if (resizeObserver) {
++				resizeObserver.disconnect()
++			}
++		}
++	}, [groupedMessages]) // Re-run effect when messages change to bind to the current virtuoso element and content wrapper
++	// kilocode_change end
+ 
+ 	//kilocode_change
+ 	// Effect to clear checkpoint warning when messages appear or task changes
