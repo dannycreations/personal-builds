@@ -310,3 +310,75 @@ file src/shared/utils/process.ts
 +		}
 +	}
 +}
+
+file src/core/auto-approval/__tests__/commands.spec.ts
+label describe("getCommandDecision", () => {
+
+ 			expect(result).toBe("auto_approve")
+ 		})
+ 	})
++
++	describe("commands containing caret ^ symbol", () => {
++		it("should auto-approve command containing ^ in regex patterns when allowed", () => {
++			// When rg is auto-approved, searching for regex patterns with ^ (caret)
++			// should be auto-approved and not flagged as dangerous on Windows
++			const allowedCommands = ["rg"]
++			const deniedCommands: string[] = []
++
++			const result = getCommandDecision('rg -n "(^|\\s)use\\s" crates', allowedCommands, deniedCommands)
++
++			expect(result).toBe("auto_approve")
++		})
++
++		it("should block command with caret quote bypass on Windows", () => {
++			const allowedCommands = ["echo"]
++			const deniedCommands: string[] = []
++
++			const result = getCommandDecision('echo ^" & whoami & echo "', allowedCommands, deniedCommands)
++
++			expect(result).toBe("ask_user")
++		})
++	})
+ })
+
+file src/core/auto-approval/commands.ts
+label export function containsDangerousSubstitution(source: string): boolean {
+
+ 	// This regex matches patterns like *(e:...:), ?(e:...:), +(e:...:), @(e:...:), !(e:...:)
+ 	const zshGlobQualifier = /[*?+@!]\(e:[^:]+:\)/.test(source)
+ 
++	// Check for Windows CMD caret quote bypass: ^" outside of double quotes.
++	// In cmd.exe, ^" escapes the double quote, so it does not start/end quoting.
++	// But in the parser (shell-quote), ^ is not an escape, so the quote starts/ends quoting.
++	// This mismatch can allow hiding command separators (like &) from the parser.
++	let win32CaretQuoteBypass = false
++	if ((process as any).platform === "win32") {
++		let inDoubleQuote = false
++		for (let i = 0; i < source.length; i++) {
++			const char = source[i]
++			if (char === '"') {
++				inDoubleQuote = !inDoubleQuote
++			} else if (char === "^" && !inDoubleQuote && source[i + 1] === '"') {
++				win32CaretQuoteBypass = true
++				break
++			}
++		}
++	}
++
+ 	// Return true if any dangerous pattern is detected
++	// Note: We don't block caret "^" generally as a dangerous substitution anymore, as it is extremely common
++	// in search regexes (e.g. rg "^something" or rg "(^|\s)use") and doesn't pose a remote command
++	// injection risk by itself. We only block caret escaping double quotes (win32CaretQuoteBypass) which
++	// could otherwise be used to manipulate parsing/quoting boundaries in cmd.exe.
+ 	return (
+ 		dangerousParameterExpansion ||
+ 		parameterAssignmentWithEscapes ||
+ 		indirectExpansion ||
+ 		hereStringWithSubstitution ||
+ 		zshProcessSubstitution ||
+ 		zshGlobQualifier ||
+-		((process as any).platform === "win32" && /\^/.test(source)) // kilocode_change: Windows CMD specific escape character
++		win32CaretQuoteBypass
+ 	)
+ }
+ 
