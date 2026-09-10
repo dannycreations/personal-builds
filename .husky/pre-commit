@@ -1,0 +1,15 @@
+echo "Running pre-commit checks..."
+
+echo "Running Format..."
+if ! OUTPUT=$(bun run format --no-color 2>&1); then
+  echo "$OUTPUT"
+  echo "❌ Format script failed to run"
+  exit 1
+fi
+
+if echo "$OUTPUT" | grep -E "[[:space:]][0-9.]+(ms|s)$" > /dev/null; then
+  echo "❌ Please try committing again"
+  exit 1
+fi
+
+echo "✅ All checks passed!"

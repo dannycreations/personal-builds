@@ -1,0 +1,15 @@
+echo "Running pre-push checks..."
+
+echo "Running Check..."
+bun run check || {
+  echo "❌ Please fix the errors and try committing again"
+  exit 1
+}
+
+echo "Running Test..."
+bun run test || {
+  echo "❌ Please fix the errors and try committing again"
+  exit 1
+}
+
+echo "✅ All checks passed!"
