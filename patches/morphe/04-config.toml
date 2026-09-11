@@ -1,0 +1,8 @@
+cli-source = "github:MorpheApp/morphe-desktop"
+cli-version = "dev"
+patches-source = "gitlab:Paresh-Maheshwari/paresh-patches"
+patches-version = "dev"
+
+[Telegram]
+package-name = "org.telegram.messenger.web"
+arch = "arm64-v8a"

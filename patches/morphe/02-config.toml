@@ -1,0 +1,18 @@
+cli-source = "github:MorpheApp/morphe-desktop"
+cli-version = "dev"
+patches-source = "github:anddea/revanced-patches"
+patches-version = "dev"
+
+[YouTube]
+package-name = "com.google.android.youtube"
+arch = "arm64-v8a"
+patches-options = {
+  "GmsCore support" = "packageNameYouTube=com.youtube.android"
+}
+
+[YouTube-Music]
+package-name = "com.google.android.apps.youtube.music"
+arch = "arm64-v8a"
+patches-options = {
+  "GmsCore support" = "packageNameYouTubeMusic=com.youtube.music.android"
+}

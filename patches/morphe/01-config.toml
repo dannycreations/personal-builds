@@ -1,18 +1,8 @@
-cli-source = "morpheapp/morphe-cli"
+cli-source = "MorpheApp/morphe-desktop"
 cli-version = "dev"
-patches-source = "anddea/revanced-patches"
+patches-source = "MorpheApp/morphe-patches"
 patches-version = "dev"
 
-[YouTube]
-apkmirror-dlurl = "https://www.apkmirror.com/apk/google-inc/youtube"
-uptodown-dlurl = "https://youtube.en.uptodown.com/android"
-archive-dlurl = "https://archive.org/download/jhc-apks/apks/com.google.android.youtube"
+[Reddit]
+package-name = "com.reddit.frontpage"
 arch = "arm64-v8a"
-patcher-args = "-OpackageNameYouTube=com.youtube.android"
-
-[Music]
-apkmirror-dlurl = "https://www.apkmirror.com/apk/google-inc/youtube-music"
-uptodown-dlurl = "https://youtube-music.en.uptodown.com/android"
-archive-dlurl = "https://archive.org/download/jhc-apks/apks/com.google.android.apps.youtube.music"
-arch = "arm64-v8a"
-patcher-args = "-OpackageNameYouTubeMusic=com.youtube.music.android"

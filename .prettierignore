@@ -1,6 +1,4 @@
 dist/
-temp/
-build/
 context/
 patches/
 node_modules/

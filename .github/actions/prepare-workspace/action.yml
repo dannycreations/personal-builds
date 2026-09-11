@@ -1,5 +1,5 @@
 name: 'Prepare Workspace'
-description: 'Sets up Nagato, applies patches, and optionally copies configuration files.'
+description: 'Sets up Nagato, applies patches, and optionally copies configuration files and scripts.'
 inputs:
   target-dir:
     description: 'The directory where the target repository is located'
@@ -20,8 +20,7 @@ runs:
       with:
         version: ${{ inputs.nagato-version }}
 
-    - name: Copy Config Files
-      if: inputs.copy-to != ''
+    - name: Copy Patches
       shell: bash
       run: |
         PATCH_DIR="${{ github.workspace }}/patches/${{ inputs.target-dir }}"
@@ -33,6 +32,20 @@ runs:
           cp -rv "$PATCH_DIR/." "$DEST_DIR"
         else
           echo "Source patch directory $PATCH_DIR does not exist. Skipping copy."
+        fi
+
+    - name: Copy Scripts
+      shell: bash
+      run: |
+        SCRIPTS_DIR="${{ github.workspace }}/scripts/${{ inputs.target-dir }}"
+        DEST_DIR="${{ inputs.target-dir }}/${{ inputs.copy-to }}"
+
+        if [ -d "$SCRIPTS_DIR" ]; then
+          echo "Copying scripts from $SCRIPTS_DIR to $DEST_DIR"
+          mkdir -p "$DEST_DIR"
+          cp -rv "$SCRIPTS_DIR/." "$DEST_DIR"
+        else
+          echo "Source scripts directory $SCRIPTS_DIR does not exist. Skipping copy."
         fi
 
     - name: Apply Patches

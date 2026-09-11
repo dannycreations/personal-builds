@@ -1,0 +1,8 @@
+cli-source = "github:MorpheApp/morphe-desktop"
+cli-version = "dev"
+patches-source = "github:crimera/piko"
+patches-version = "dev"
+
+[Twitter]
+package-name = "com.twitter.android"
+arch = "arm64-v8a"
