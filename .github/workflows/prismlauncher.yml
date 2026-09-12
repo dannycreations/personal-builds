@@ -19,9 +19,9 @@ jobs:
 
     env:
       BUILD_TYPE: Release
-      SCCACHE_DIR: ${{ github.workspace }}/.sccache
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+      CMAKE_PRESET: windows_msvc
+      ARTIFACT_NAME: Windows-MSVC-Qt6
+      BUILD_PLATFORM: official
 
     steps:
       - name: Checkout Local Repository
@@ -59,24 +59,10 @@ jobs:
         if: steps.check-changes.outputs.has-changes == 'true'
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.10.1'
+          version: '6.10.2'
           aqtversion: '==3.1.*'
           modules: qtimageformats qtnetworkauth
           cache: true
-
-      - name: Install Sccache
-        if: steps.check-changes.outputs.has-changes == 'true'
-        shell: pwsh
-        run: |
-          choco install sccache
-          echo "SCCACHE_PATH=$(where.exe sccache)" >> $env:GITHUB_ENV
-
-      - name: Setup sccache Cache
-        if: steps.check-changes.outputs.has-changes == 'true'
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: ${{ env.WORK_DIR }}-${{ runner.os }}-sccache-${{ github.run_id }}
 
       - name: Setup Build
         if: steps.check-changes.outputs.has-changes == 'true'
@@ -95,7 +81,7 @@ jobs:
             -Source "$env:FEED_URL"
 
           "VCPKG_BINARY_SOURCES=clear;nuget,$env:FEED_URL,readwrite" | Out-File -Append $env:GITHUB_ENV
-          "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" | Out-File -Append $env:GITHUB_ENV
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -Append $env:GITHUB_ENV
         env:
           GITHUB_TOKEN: ${{ github.token }}
           FEED_URL: https://nuget.pkg.github.com/${{ env.WORK_DIR }}/index.json
@@ -105,8 +91,8 @@ jobs:
         working-directory: ${{ env.WORK_DIR }}
         shell: pwsh
         run: |
-          cmake --preset "windows_msvc"
-          cmake --build --preset "windows_msvc" --config "${{ env.BUILD_TYPE }}"
+          cmake --preset "${{ env.CMAKE_PRESET }}"
+          cmake --build --preset "${{ env.CMAKE_PRESET }}" --config "${{ env.BUILD_TYPE }}"
           cmake --install "build" --config "${{ env.BUILD_TYPE }}"
 
           cp -r "install" "install-portable"
