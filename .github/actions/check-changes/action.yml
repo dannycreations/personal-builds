@@ -1,5 +1,5 @@
 name: 'Check Changes'
-description: 'Checks out target repository and compares current SHA with the last recorded SHA.'
+description: 'Checks out target repository and compares current SHA with the last recorded SHA'
 inputs:
   target-repo:
     description: 'The repository to check (e.g., org/repo)'
@@ -41,17 +41,24 @@ runs:
         submodules: recursive
         fetch-depth: ${{ inputs.fetch-depth }}
 
-    - name: Restore Last Cache SHA
-      id: restore_sha
+    - name: Check Commit SHAs
+      id: check_commits
       shell: bash
+      working-directory: ${{ inputs.target-dir }}
+      env:
+        TARGET_DIR: ${{ inputs.target-dir }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
       run: |
-        SHA_FILE="${{ inputs.target-dir }}.sha"
+        set -euo pipefail
 
-        if git fetch origin cache --depth=1 &>/dev/null; then
-          if LAST_SHA=$(git show FETCH_HEAD:"$SHA_FILE" 2>/dev/null); then
-            echo "last_sha=$LAST_SHA" >> "$GITHUB_OUTPUT"
-            echo "Found last recorded SHA for $SHA_FILE: $LAST_SHA"
-            exit 0
+        SHA_FILE="${TARGET_DIR}.sha"
+        OLD_SHA=""
+
+        if git -C "$GITHUB_WORKSPACE" fetch origin cache --depth=1 &>/dev/null; then
+          OLD_SHA=$(git -C "$GITHUB_WORKSPACE" show "FETCH_HEAD:$SHA_FILE" 2>/dev/null || true)
+
+          if [[ -n "$OLD_SHA" ]]; then
+            echo "Found last recorded SHA for $SHA_FILE: $OLD_SHA"
           else
             echo "Cache branch exists but $SHA_FILE not found."
           fi
@@ -59,21 +66,14 @@ runs:
           echo "Cache branch 'cache' not found on remote."
         fi
 
-        echo "last_sha=" >> "$GITHUB_OUTPUT"
-        echo "No previous cache found for $SHA_FILE."
-
-    - name: Compare Commit SHAs
-      id: check_commits
-      shell: bash
-      working-directory: ${{ inputs.target-dir }}
-      run: |
         NEW_SHA=$(git rev-parse HEAD)
-        OLD_SHA="${{ steps.restore_sha.outputs.last_sha }}"
         SHORT_SHA=$(git rev-parse --short HEAD)
 
-        echo "new-sha=$NEW_SHA" >> "$GITHUB_OUTPUT"
-        echo "old-sha=$OLD_SHA" >> "$GITHUB_OUTPUT"
-        echo "short-sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+        {
+          echo "new-sha=$NEW_SHA"
+          echo "old-sha=$OLD_SHA"
+          echo "short-sha=$SHORT_SHA"
+        } >> "$GITHUB_OUTPUT"
 
         if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
           echo "has-changes=true" >> "$GITHUB_OUTPUT"

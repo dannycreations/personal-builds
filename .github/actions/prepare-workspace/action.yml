@@ -1,12 +1,13 @@
 name: 'Prepare Workspace'
-description: 'Sets up Nagato, applies patches, and optionally copies configuration files and scripts.'
+description: 'Sets up Nagato, copies optional workspace files, and applies patches'
 inputs:
   target-dir:
     description: 'The directory where the target repository is located'
     required: true
   copy-to:
-    description: 'Subdirectory within target-dir to copy all files from the patch directory (optional)'
+    description: 'Subdirectory within target-dir to copy workspace files into'
     required: false
+    default: ''
   nagato-version:
     description: 'Version of Nagato to use'
     required: false
@@ -20,51 +21,52 @@ runs:
       with:
         version: ${{ inputs.nagato-version }}
 
-    - name: Copy Patches
-      shell: bash
-      run: |
-        PATCH_DIR="${{ github.workspace }}/patches/${{ inputs.target-dir }}"
-        DEST_DIR="${{ inputs.target-dir }}/${{ inputs.copy-to }}"
-
-        if [ -d "$PATCH_DIR" ]; then
-          echo "Copying files from $PATCH_DIR to $DEST_DIR"
-          mkdir -p "$DEST_DIR"
-          cp -rv "$PATCH_DIR/." "$DEST_DIR"
-        else
-          echo "Source patch directory $PATCH_DIR does not exist. Skipping copy."
-        fi
-
-    - name: Copy Scripts
-      shell: bash
-      run: |
-        SCRIPTS_DIR="${{ github.workspace }}/scripts/${{ inputs.target-dir }}"
-        DEST_DIR="${{ inputs.target-dir }}/${{ inputs.copy-to }}"
-
-        if [ -d "$SCRIPTS_DIR" ]; then
-          echo "Copying scripts from $SCRIPTS_DIR to $DEST_DIR"
-          mkdir -p "$DEST_DIR"
-          cp -rv "$SCRIPTS_DIR/." "$DEST_DIR"
-        else
-          echo "Source scripts directory $SCRIPTS_DIR does not exist. Skipping copy."
-        fi
-
-    - name: Apply Patches
+    - name: Prepare Workspace
       shell: bash
       working-directory: ${{ inputs.target-dir }}
+      env:
+        TARGET_DIR: ${{ inputs.target-dir }}
+        COPY_TO: ${{ inputs.copy-to }}
       run: |
-        PATCH_DIR="${{ github.workspace }}/patches/${{ inputs.target-dir }}"
+        set -euo pipefail
 
-        if [ -d "$PATCH_DIR" ]; then
-          PATCHES=$(find "$PATCH_DIR" -name "*.patch" -type f | sort)
+        DEST_DIR="$COPY_TO"
+        PATCH_DIR="$GITHUB_WORKSPACE/patches/$TARGET_DIR"
+        SCRIPTS_DIR="$GITHUB_WORKSPACE/scripts/$TARGET_DIR"
 
-          if [ -n "$PATCHES" ]; then
-            echo "Applying patches from $PATCH_DIR"
-            while IFS= read -r patch; do
-              nagato "$patch"
-            done <<< "$PATCHES"
-          else
-            echo "No .patch files found in $PATCH_DIR"
+        copy_dir() {
+          local source_dir="$1"
+          local label="$2"
+
+          if [[ ! -d "$source_dir" ]]; then
+            echo "Source $label directory $source_dir does not exist. Skipping."
+            return
           fi
-        else
+
+          mkdir -p "$DEST_DIR"
+          echo "Copying $label from $source_dir to $DEST_DIR"
+          cp -rv "$source_dir/." "$DEST_DIR"
+        }
+
+        copy_dir "$PATCH_DIR" "patches"
+        copy_dir "$SCRIPTS_DIR" "scripts"
+
+        if [[ ! -d "$PATCH_DIR" ]]; then
           echo "Patch directory $PATCH_DIR not found, skipping."
+          exit 0
         fi
+
+        mapfile -t PATCHES < <(
+          find "$PATCH_DIR" -type f -name '*.patch' -print | sort
+        )
+
+        if ((${#PATCHES[@]} == 0)); then
+          echo "No .patch files found in $PATCH_DIR"
+          exit 0
+        fi
+
+        echo "Applying ${#PATCHES[@]} patch(es) from $PATCH_DIR"
+
+        for patch in "${PATCHES[@]}"; do
+          nagato "$patch"
+        done

@@ -23,6 +23,10 @@ jobs:
       ARTIFACT_NAME: Windows-MSVC-Qt6
       BUILD_PLATFORM: official
 
+    defaults:
+      run:
+        working-directory: ${{ env.WORK_DIR }}
+
     steps:
       - name: Checkout Local Repository
         uses: actions/checkout@v6
@@ -48,7 +52,7 @@ jobs:
           arch: amd64
           vsversion: 2022
 
-      - name: Setup Java Environment
+      - name: Setup Java
         if: steps.check-changes.outputs.has-changes == 'true'
         uses: actions/setup-java@v5
         with:
@@ -64,48 +68,54 @@ jobs:
           modules: qtimageformats qtnetworkauth
           cache: true
 
-      - name: Setup Build
+      - name: Setup vcpkg
         if: steps.check-changes.outputs.has-changes == 'true'
-        working-directory: ${{ env.WORK_DIR }}
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FEED_URL: https://nuget.pkg.github.com/${{ env.WORK_DIR }}/index.json
         run: |
-          .$(vcpkg fetch nuget) `
-            sources add `
+          .$(vcpkg fetch nuget) sources add `
             -Source "$env:FEED_URL" `
             -StorePasswordInClearText `
             -Name GitHubPackages `
             -UserName "$env:WORK_DIR" `
             -Password "$env:GITHUB_TOKEN"
-          .$(vcpkg fetch nuget) `
-            setapikey "$env:GITHUB_TOKEN" `
+
+          .$(vcpkg fetch nuget) setapikey "$env:GITHUB_TOKEN" `
             -Source "$env:FEED_URL"
 
-          "VCPKG_BINARY_SOURCES=clear;nuget,$env:FEED_URL,readwrite" | Out-File -Append $env:GITHUB_ENV
-          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -Append $env:GITHUB_ENV
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          FEED_URL: https://nuget.pkg.github.com/${{ env.WORK_DIR }}/index.json
+          "VCPKG_BINARY_SOURCES=clear;nuget,$env:FEED_URL,readwrite" |
+            Out-File -Append $env:GITHUB_ENV
+
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
+            Out-File -Append $env:GITHUB_ENV
 
       - name: Build and Package
         if: steps.check-changes.outputs.has-changes == 'true'
-        working-directory: ${{ env.WORK_DIR }}
         shell: pwsh
-        run: |
-          cmake --preset "${{ env.CMAKE_PRESET }}"
-          cmake --build --preset "${{ env.CMAKE_PRESET }}" --config "${{ env.BUILD_TYPE }}"
-          cmake --install "build" --config "${{ env.BUILD_TYPE }}"
-
-          cp -r "install" "install-portable"
-          cmake --install "build" --config "${{ env.BUILD_TYPE }}" --prefix "install-portable" --component portable
-
-          $zipName = "MSVC-${env:SHORT_SHA}-${env:BUILD_TYPE}.zip"
-          $fullZipPath = Join-Path -Path $PWD -ChildPath $zipName
-          Compress-Archive -Path "install-portable\*" -DestinationPath $fullZipPath -Force
         env:
           SHORT_SHA: ${{ steps.check-changes.outputs.short-sha }}
+        run: |
+          cmake --preset "$env:CMAKE_PRESET"
+          cmake --build --preset "$env:CMAKE_PRESET" --config "$env:BUILD_TYPE"
+          cmake --install build --config "$env:BUILD_TYPE"
 
-      - name: Publish Build and Update SHA
-        if: steps.check-changes.outputs.has-changes == 'true' && success()
+          Copy-Item install install-portable -Recurse -Force
+
+          cmake --install build `
+            --config "$env:BUILD_TYPE" `
+            --prefix install-portable `
+            --component portable
+
+          $zipName = "MSVC-$env:SHORT_SHA-$env:BUILD_TYPE.zip"
+          Compress-Archive `
+            -Path install-portable\* `
+            -DestinationPath $zipName `
+            -Force
+
+      - name: Publish Build
+        if: steps.check-changes.outputs.has-changes == 'true'
         uses: ./.github/actions/publish-build
         with:
           old-sha: ${{ steps.check-changes.outputs.old-sha }}

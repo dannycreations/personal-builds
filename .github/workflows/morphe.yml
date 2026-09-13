@@ -17,6 +17,10 @@ jobs:
     name: Build and Release
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: ${{ env.WORK_DIR }}
+
     steps:
       - name: Checkout Local Repository
         uses: actions/checkout@v6
@@ -26,13 +30,13 @@ jobs:
         with:
           target-dir: ${{ env.WORK_DIR }}
 
-      - name: Setup Java Environment
+      - name: Setup Java
         uses: actions/setup-java@v5
         with:
           java-version: 21
           distribution: zulu
 
-      - name: Setup Bun Environment
+      - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
@@ -43,24 +47,22 @@ jobs:
           path: |
             ~/.cloakbrowser
             ~/.bun/install/cache
-            ${{ env.WORK_DIR }}/node_modules
           key: ${{ env.WORK_DIR }}-${{ runner.os }}-bun-${{ hashFiles(format('{0}/bun.lock', env.WORK_DIR)) }}
 
       - name: Install Dependencies
-        working-directory: ${{ env.WORK_DIR }}
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build APKs
-        working-directory: ${{ env.WORK_DIR }}
+        shell: bash
         run: |
-          CONFIGS=($(find . -maxdepth 1 -name "*-*.toml" | sort))
-          for CONFIG in "${CONFIGS[@]}"; do
-            echo "Building with $CONFIG"
-            bun run main.ts "$(realpath "$CONFIG")"
-          done
+          find . -maxdepth 1 -type f -name '*-*.toml' -print0 |
+            sort -z |
+            while IFS= read -r -d '' config; do
+              echo "Building with $config"
+              bun run main.ts "$(realpath "$config")"
+            done
 
-      - name: Publish Build and Update SHA
-        if: success()
+      - name: Publish Build
         uses: ./.github/actions/publish-build
         with:
           release-title: Morphe Nightly
