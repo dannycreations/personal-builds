@@ -12,23 +12,6 @@ import { fetchGitRelease, resolveGitAsset } from './git';
 
 import type { AppTarget } from './apkmirror';
 
-function assertSuccess(command: string, result: ReturnType<typeof spawnSync>): void {
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`${command} exited with ${result.status}`);
-}
-
-function runCommand(command: string, args: string[], cwd: string): void {
-  console.log(`$ ${command} ${args.join(' ')}`);
-  const result = spawnSync(command, args, { cwd, encoding: 'utf-8', stdio: 'inherit' });
-  assertSuccess(command, result);
-}
-
-function captureCommand(command: string, args: string[]): string {
-  const result = spawnSync(command, args, { encoding: 'utf-8', stdio: 'pipe' });
-  assertSuccess(command, result);
-  return result.stdout ?? '';
-}
-
 const TEMP_DIR = join(process.cwd(), '.temp');
 const UNSPLIT_ARCHS = new Set(['all', 'both']);
 const KNOWN_APK_EXTENSIONS = ['apkm', 'xapk', 'apks'] as const;
@@ -41,15 +24,51 @@ export interface AppConfig extends AppTarget {
   readonly 'patches-options'?: Readonly<Record<string, string>>;
 }
 
-function listSupportedVersions(cliPath: string, patchesPath: string, packageName: string): readonly string[] {
-  const stdout = captureCommand('java', ['-jar', cliPath, 'list-versions', '--patches', patchesPath, '-f', packageName]);
+export interface MorpheBuildOptions {
+  readonly cliSource: string;
+  readonly cliVersion: string;
+  readonly patchesSource: string;
+  readonly patchesVersion: string;
+}
 
-  const versions: string[] = [];
-  for (const line of stdout.split('\n')) {
-    const match = line.trim().match(SUPPORTED_VERSION_LINE_PATTERN);
-    if (match) versions.push(match[1]);
-  }
-  return versions;
+interface PatchInfo {
+  readonly name: string;
+  readonly enabled: boolean;
+}
+
+interface ReleaseAssetRequest {
+  readonly source: string;
+  readonly version: string;
+  readonly assetPattern: RegExp;
+  readonly dest: string;
+  readonly label: string;
+}
+
+interface BuildContext {
+  readonly appName: string;
+  readonly appConfig: AppConfig;
+  readonly packageName: string;
+  readonly cliPath: string;
+  readonly patchesPath: string;
+  readonly workDir: string;
+}
+
+function assertSuccess(command: string, result: ReturnType<typeof spawnSync>): void {
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`${command} exited with ${result.status}`);
+}
+
+function runCommand(command: string, args: string[], cwd: string): void {
+  console.log(`$ ${command} ${args.join(' ')}`);
+  const result = spawnSync(command, args, { cwd, encoding: 'utf-8', stdio: 'inherit' });
+  assertSuccess(command, result);
+}
+
+function captureCliOutput(ctx: BuildContext, subcommand: string): string {
+  const args = ['-jar', ctx.cliPath, subcommand, '--patches', ctx.patchesPath, '-f', ctx.packageName];
+  const result = spawnSync('java', args, { encoding: 'utf-8', stdio: 'pipe' });
+  assertSuccess('java', result);
+  return result.stdout ?? '';
 }
 
 function isUniversalArch(arch: string | undefined): boolean {
@@ -60,7 +79,7 @@ function parseList(value: string | undefined, separator: RegExp): readonly strin
   return value?.split(separator).filter(Boolean) ?? [];
 }
 
-async function fetchReleaseAsset(source: string, version: string, assetPattern: RegExp, dest: string, label: string): Promise<void> {
+async function fetchReleaseAsset({ source, version, assetPattern, dest, label }: ReleaseAssetRequest): Promise<void> {
   console.log(`${label} Fetching release...`);
   const release = await fetchGitRelease(source, version);
   const url = resolveGitAsset(release.assets, assetPattern);
@@ -69,48 +88,19 @@ async function fetchReleaseAsset(source: string, version: string, assetPattern: 
   await downloadFile(url, dest);
 }
 
-function finalizeDownloadedApk(resolvedDownloadUrl: string, tempPath: string, workDir: string, appName: string): string {
-  const resolvedPath = new URL(resolvedDownloadUrl).pathname;
-  const baseName = resolvedPath.split('/').filter(Boolean).pop() ?? appName;
-  const extension = KNOWN_APK_EXTENSIONS.find((ext) => resolvedPath.toLowerCase().endsWith(ext)) ?? 'apk';
-  const baseWithoutExt = baseName.replace(/\.[^.]+$/, '');
+function listSupportedVersions(ctx: BuildContext): readonly string[] {
+  const stdout = captureCliOutput(ctx, 'list-versions');
 
-  let apkPath = join(workDir, `${baseWithoutExt}.${extension}`);
-  if (apkPath !== tempPath) renameSync(tempPath, apkPath);
-
-  if (extension === 'apk' && isApkBundle(apkPath)) {
-    const bundlePath = apkPath.slice(0, -4) + '.apkm';
-    renameSync(apkPath, bundlePath);
-    apkPath = bundlePath;
+  const versions: string[] = [];
+  for (const line of stdout.split('\n')) {
+    const match = line.trim().match(SUPPORTED_VERSION_LINE_PATTERN);
+    if (match) versions.push(match[1]);
   }
-
-  return apkPath;
+  return versions;
 }
 
-async function downloadApk(
-  appName: string,
-  packageName: string,
-  appTarget: AppTarget,
-  targetVersion: string,
-  workDir: string,
-): Promise<{ apkPath: string; version: string }> {
-  console.log(`[${appName}] Resolving APK from APKMirror...`);
-  const { url, version } = await resolveApkmirrorApk(packageName, appTarget, targetVersion);
-
-  console.log(`[${appName}] Downloading APK...`);
-  const tempPath = join(workDir, `${appName}-apk.tmp`);
-  const resolvedDownloadUrl = await downloadFile(url, tempPath);
-
-  return { apkPath: finalizeDownloadedApk(resolvedDownloadUrl, tempPath, workDir, appName), version };
-}
-
-interface PatchInfo {
-  readonly name: string;
-  readonly enabled: boolean;
-}
-
-function listPatches(cliPath: string, patchesPath: string, packageName: string): readonly PatchInfo[] {
-  const stdout = captureCommand('java', ['-jar', cliPath, 'list-patches', '--patches', patchesPath, '-f', packageName]);
+function listPatches(ctx: BuildContext): readonly PatchInfo[] {
+  const stdout = captureCliOutput(ctx, 'list-patches');
 
   const patches: PatchInfo[] = [];
   for (const block of stdout.split(/\n\s*\n/)) {
@@ -126,17 +116,42 @@ function listPatches(cliPath: string, patchesPath: string, packageName: string):
   return patches;
 }
 
-function resolveEnabledPatchNames(
-  cliPath: string,
-  patchesPath: string,
-  packageName: string,
-  included: readonly string[],
-  excluded: readonly string[],
-): readonly string[] {
+function finalizeDownloadedApk(ctx: BuildContext, resolvedDownloadUrl: string, tempPath: string): string {
+  const resolvedPath = new URL(resolvedDownloadUrl).pathname;
+  const baseName = resolvedPath.split('/').filter(Boolean).pop() ?? ctx.appName;
+  const extension = KNOWN_APK_EXTENSIONS.find((ext) => resolvedPath.toLowerCase().endsWith(ext)) ?? 'apk';
+  const baseWithoutExt = baseName.replace(/\.[^.]+$/, '');
+
+  let apkPath = join(ctx.workDir, `${baseWithoutExt}.${extension}`);
+  if (apkPath !== tempPath) renameSync(tempPath, apkPath);
+
+  if (extension === 'apk' && isApkBundle(apkPath)) {
+    const bundlePath = apkPath.slice(0, -4) + '.apkm';
+    renameSync(apkPath, bundlePath);
+    apkPath = bundlePath;
+  }
+
+  return apkPath;
+}
+
+async function downloadApk(ctx: BuildContext, targetVersion: string): Promise<{ apkPath: string; version: string }> {
+  const { appName, packageName, appConfig, workDir } = ctx;
+
+  console.log(`[${appName}] Resolving APK from APKMirror...`);
+  const { url, version } = await resolveApkmirrorApk(packageName, appConfig, targetVersion);
+
+  console.log(`[${appName}] Downloading APK...`);
+  const tempPath = join(workDir, `${appName}-apk.tmp`);
+  const resolvedDownloadUrl = await downloadFile(url, tempPath);
+
+  return { apkPath: finalizeDownloadedApk(ctx, resolvedDownloadUrl, tempPath), version };
+}
+
+function resolveEnabledPatchNames(ctx: BuildContext, included: readonly string[], excluded: readonly string[]): readonly string[] {
   let enabled = included;
 
   if (enabled.length === 0) {
-    enabled = listPatches(cliPath, patchesPath, packageName)
+    enabled = listPatches(ctx)
       .filter((patch) => patch.enabled)
       .map((patch) => patch.name);
     if (enabled.length === 0) {
@@ -152,15 +167,8 @@ function resolveEnabledPatchNames(
   return enabled;
 }
 
-function buildPatchArgs(
-  appConfig: AppConfig,
-  cliPath: string,
-  patchesPath: string,
-  packageName: string,
-  apkPath: string,
-  outputPath: string,
-  workDir: string,
-): string[] {
+function buildPatchArgs(ctx: BuildContext, apkPath: string, outputPath: string): string[] {
+  const { appConfig, cliPath, patchesPath, workDir } = ctx;
   const args = ['-jar', cliPath, 'patch', '--patches', patchesPath, '--out', outputPath];
 
   if (!isUniversalArch(appConfig.arch)) {
@@ -169,7 +177,7 @@ function buildPatchArgs(
 
   const included = parseList(appConfig['included-patches'], /[, ]+/);
   const excluded = parseList(appConfig['excluded-patches'], /[, ]+/);
-  const enabled = resolveEnabledPatchNames(cliPath, patchesPath, packageName, included, excluded);
+  const enabled = resolveEnabledPatchNames(ctx, included, excluded);
 
   const patchOptions = appConfig['patches-options'] ?? {};
   const patchesWithOptions = new Set(Object.keys(patchOptions));
@@ -188,14 +196,7 @@ function buildPatchArgs(
   return args;
 }
 
-export async function buildApp(
-  appName: string,
-  appConfig: AppConfig,
-  cliSource: string,
-  cliVersion: string,
-  patchesSource: string,
-  patchesVersion: string,
-): Promise<void> {
+export async function buildApp(appName: string, appConfig: AppConfig, options: MorpheBuildOptions): Promise<void> {
   const workDir = join(TEMP_DIR, appName);
   if (existsSync(workDir)) rmSync(workDir, { recursive: true });
   mkdirSync(workDir, { recursive: true });
@@ -203,23 +204,43 @@ export async function buildApp(
   console.log(`\n[${appName}] Starting build...`);
 
   const cliPath = join(TEMP_DIR, 'morphe.jar');
-  await fetchReleaseAsset(cliSource, cliVersion, /^morphe-desktop-.*-all\.jar$/i, cliPath, `[${appName}] CLI:`);
+  await fetchReleaseAsset({
+    source: options.cliSource,
+    version: options.cliVersion,
+    assetPattern: /^morphe-desktop-.*-all\.jar$/i,
+    dest: cliPath,
+    label: `[${appName}] CLI:`,
+  });
 
   const patchesPath = join(workDir, 'patches.mpp');
-  await fetchReleaseAsset(patchesSource, patchesVersion, /^patches-.*\.mpp$/i, patchesPath, `[${appName}] Patches:`);
+  await fetchReleaseAsset({
+    source: options.patchesSource,
+    version: options.patchesVersion,
+    assetPattern: /^patches-.*\.mpp$/i,
+    dest: patchesPath,
+    label: `[${appName}] Patches:`,
+  });
+
+  const ctx: BuildContext = {
+    appName,
+    appConfig,
+    packageName: appConfig['package-name'],
+    cliPath,
+    patchesPath,
+    workDir,
+  };
 
   console.log(`[${appName}] Listing supported versions...`);
-  const supportedVersions = listSupportedVersions(cliPath, patchesPath, appConfig['package-name']);
-  const targetVersion = appConfig.version ?? supportedVersions[0];
+  const targetVersion = appConfig.version ?? listSupportedVersions(ctx)[0];
   if (!targetVersion) {
     throw new Error(`No supported versions found for ${appName}`);
   }
   console.log(`[${appName}] Target version: ${targetVersion}`);
 
-  const { apkPath, version } = await downloadApk(appName, appConfig['package-name'], appConfig, targetVersion, workDir);
+  const { apkPath, version } = await downloadApk(ctx, targetVersion);
 
   const outputPath = join(workDir, `${appName}-patched.apk`);
-  const patchArgs = buildPatchArgs(appConfig, cliPath, patchesPath, appConfig['package-name'], apkPath, outputPath, workDir);
+  const patchArgs = buildPatchArgs(ctx, apkPath, outputPath);
 
   console.log(`[${appName}] Patching...`);
   runCommand('java', patchArgs, workDir);

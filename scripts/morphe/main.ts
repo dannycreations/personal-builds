@@ -6,7 +6,7 @@ import { parse } from 'toml';
 import { closeBrowser } from './lib/browser';
 import { buildApp } from './lib/cli';
 
-import type { AppConfig } from './lib/cli';
+import type { AppConfig, MorpheBuildOptions } from './lib/cli';
 
 const RESERVED_KEYS = new Set(['cli-source', 'cli-version', 'patches-source', 'patches-version']);
 
@@ -33,18 +33,19 @@ async function main(): Promise<void> {
       return;
     }
 
+    const buildOptions: MorpheBuildOptions = {
+      cliSource: config['cli-source'],
+      cliVersion: config['cli-version'],
+      patchesSource: config['patches-source'],
+      patchesVersion: config['patches-version'],
+    };
+
     for (const appName of appNames) {
+      const appNameLower = appName.toLowerCase();
       try {
-        await buildApp(
-          appName.toLowerCase(),
-          config[appName] as AppConfig,
-          config['cli-source'],
-          config['cli-version'],
-          config['patches-source'],
-          config['patches-version'],
-        );
+        await buildApp(appNameLower, config[appName] as AppConfig, buildOptions);
       } catch (error) {
-        console.error(`[${appName}] Build failed: ${error}`);
+        console.error(`[${appNameLower}] Build failed: ${error}`);
         process.exitCode = 1;
       }
     }

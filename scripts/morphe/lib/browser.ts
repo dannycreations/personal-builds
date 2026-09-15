@@ -1,6 +1,9 @@
 import { existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { open } from 'node:fs/promises';
+import { basename, dirname } from 'node:path';
 import { launch } from 'cloakbrowser';
+
+import { sleep } from './utils';
 
 type Browser = Awaited<ReturnType<typeof launch>>;
 
@@ -9,9 +12,11 @@ const BASE_RETRY_DELAY_MS = 2000;
 const SELECTOR_WAIT_TIMEOUT_MS = 10000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const CHALLENGE_MARKERS = ['cloudflare', 'attention required', 'verify you are human', 'just a moment'];
+const DOWNLOAD_TIMEOUT_MS = 600000;
 
 let browser: Browser | null = null;
-const cookieJar = new Map<string, string>();
+
+const cookieJars = new Map<string, Map<string, string>>();
 
 async function getBrowser(): Promise<Browser> {
   browser ??= await launch({ headless: true });
@@ -23,14 +28,28 @@ export async function closeBrowser(): Promise<void> {
   browser = null;
 }
 
-function buildRequestHeaders(): Record<string, string> {
-  if (cookieJar.size === 0) return {};
-  const cookieHeader = [...cookieJar].map(([name, value]) => `${name}=${value}`).join('; ');
-  return { Cookie: cookieHeader };
+function hostnameOf(url: string): string {
+  return new URL(url).hostname;
 }
 
-function storeCookies(cookies: Record<string, string>): void {
-  for (const [name, value] of Object.entries(cookies)) cookieJar.set(name, value);
+function getCookieJar(hostname: string): Map<string, string> {
+  let jar = cookieJars.get(hostname);
+  if (!jar) {
+    jar = new Map();
+    cookieJars.set(hostname, jar);
+  }
+  return jar;
+}
+
+function buildRequestHeaders(hostname: string): Record<string, string> {
+  const jar = cookieJars.get(hostname);
+  if (!jar || jar.size === 0) return {};
+  return { Cookie: [...jar].map(([name, value]) => `${name}=${value}`).join('; ') };
+}
+
+function storeCookies(hostname: string, cookies: Record<string, string>): void {
+  const jar = getCookieJar(hostname);
+  for (const [name, value] of Object.entries(cookies)) jar.set(name, value);
 }
 
 function parseSetCookieHeaders(headers: readonly string[]): Record<string, string> {
@@ -70,10 +89,7 @@ async function fetchWithBrowser(url: string, waitSelector?: string): Promise<{ h
     }
 
     const html = await page.content();
-    const cookies: Record<string, string> = {};
-    for (const cookie of await page.context().cookies()) {
-      if (cookie.domain.includes('apkmirror')) cookies[cookie.name] = cookie.value;
-    }
+    const cookies = Object.fromEntries((await page.context().cookies()).map((cookie) => [cookie.name, cookie.value]));
 
     await page.close();
     return { html, cookies };
@@ -86,19 +102,21 @@ async function fetchWithBrowser(url: string, waitSelector?: string): Promise<{ h
 async function fetchViaBrowserOrThrow(url: string, waitSelector: string | undefined, errorMessage: string): Promise<string> {
   const result = await fetchWithBrowser(url, waitSelector);
   if (!result) throw new Error(errorMessage);
-  storeCookies(result.cookies);
+  storeCookies(hostnameOf(url), result.cookies);
   return result.html;
 }
 
 export async function fetchPage(url: string, waitSelector?: string): Promise<string> {
+  const hostname = hostnameOf(url);
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(url, { headers: buildRequestHeaders() });
-    storeCookies(parseSetCookieHeaders(res.headers.getSetCookie()));
+    const res = await fetch(url, { headers: buildRequestHeaders(hostname) });
+    storeCookies(hostname, parseSetCookieHeaders(res.headers.getSetCookie()));
 
     if (res.status === 429 && attempt < MAX_RETRIES) {
       const retryDelay = BASE_RETRY_DELAY_MS * 2 ** (attempt - 1);
       console.warn(`Rate limited (429) for ${url}, retrying in ${retryDelay}ms (attempt ${attempt}/${MAX_RETRIES})`);
-      await new Promise((resolve) => setTimeout(resolve, retryDelay));
+      await sleep(retryDelay);
       continue;
     }
 
@@ -120,23 +138,64 @@ export async function downloadFile(url: string, dest: string): Promise<string> {
   if (existsSync(dest)) return new URL(url).pathname;
   mkdirSync(dirname(dest), { recursive: true });
 
-  const headers = buildRequestHeaders();
   let currentUrl = url;
-  let res = await fetch(currentUrl, { headers, redirect: 'manual' });
-  storeCookies(parseSetCookieHeaders(res.headers.getSetCookie()));
+  let hostname = hostnameOf(currentUrl);
+  let res = await fetch(currentUrl, { headers: buildRequestHeaders(hostname), redirect: 'manual' });
+  storeCookies(hostname, parseSetCookieHeaders(res.headers.getSetCookie()));
 
   while (REDIRECT_STATUSES.has(res.status)) {
     const location = res.headers.get('location');
     if (!location) break;
+
     currentUrl = new URL(location, currentUrl).toString();
-    res = await fetch(currentUrl, { headers, redirect: 'manual' });
-    storeCookies(parseSetCookieHeaders(res.headers.getSetCookie()));
+    hostname = hostnameOf(currentUrl);
+    res = await fetch(currentUrl, { headers: buildRequestHeaders(hostname), redirect: 'manual' });
+    storeCookies(hostname, parseSetCookieHeaders(res.headers.getSetCookie()));
   }
 
   if (!res.ok || !res.body) {
     throw new Error(`Download failed ${res.status} for ${url}`);
   }
 
-  await Bun.write(dest, res);
+  const contentLength = Number(res.headers.get('content-length')) || 0;
+  const file = await open(dest, 'w');
+
+  let downloaded = 0;
+  const startTime = Date.now();
+  let lastProgressTime = startTime;
+  let lastProgressBytes = 0;
+
+  const reader = res.body.getReader();
+
+  while (true) {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms for ${url}`)), DOWNLOAD_TIMEOUT_MS);
+    });
+
+    const { done, value } = await Promise.race([reader.read(), timeoutPromise]);
+
+    if (done) break;
+
+    downloaded += value.length;
+    await file.write(value);
+
+    const now = Date.now();
+    if (now - lastProgressTime >= 2000) {
+      const elapsedMs = now - lastProgressTime;
+      const bytesSinceLast = downloaded - lastProgressBytes;
+      const speedBps = bytesSinceLast / (elapsedMs / 1000);
+      const mb = downloaded / 1024 / 1024;
+      const speedMbps = speedBps / 1024 / 1024;
+      const totalMb = contentLength / 1024 / 1024;
+      const percent = contentLength ? ((downloaded / contentLength) * 100).toFixed(1) : '???.?';
+
+      console.log(`Downloading ${basename(dest)}: ${mb.toFixed(1)} MB / ${totalMb.toFixed(1)} MB (${percent}%) at ${speedMbps.toFixed(1)} MB/s`);
+      lastProgressTime = now;
+      lastProgressBytes = downloaded;
+    }
+  }
+
+  await file.close();
+  console.log(`Download complete: ${downloaded} bytes to ${dest}`);
   return currentUrl;
 }

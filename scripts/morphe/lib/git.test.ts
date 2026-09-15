@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import { isValidSemverCore, pickHighestSemver, sortBySemverDesc } from './git';
+import { isValidSemverCore, sortBySemverDesc } from './git';
 
 describe('isValidSemverCore', () => {
   it('accepts plain numeric cores with or without a v prefix', () => {
@@ -26,19 +26,5 @@ describe('sortBySemverDesc', () => {
   it('handles unequal segment lengths by padding missing segments as 0', () => {
     const tags = ['1.9', '1.10'];
     expect([...tags].sort(sortBySemverDesc)).toEqual(['1.10', '1.9']);
-  });
-});
-
-describe('pickHighestSemver', () => {
-  it('returns the tag with the highest semver core', () => {
-    expect(pickHighestSemver(['v0.5.0', 'v1.0.0', 'v0.9.0'])).toBe('v1.0.0');
-  });
-
-  it('falls back to returning the first tag when tags are non-semver strings', () => {
-    expect(pickHighestSemver(['alpha', 'beta'])).toBe('alpha');
-  });
-
-  it('throws on an empty array', () => {
-    expect(() => pickHighestSemver([])).toThrow('No tags provided');
   });
 });

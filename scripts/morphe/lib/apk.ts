@@ -43,15 +43,9 @@ function centralDirectoryContainsApkEntry(centralDirectory: Buffer, entryCount: 
     const entrySize = CENTRAL_DIRECTORY_HEADER_SIZE + filenameLength + extraLength + commentLength;
     if (offset + entrySize > centralDirectory.length) break;
 
-    if (filenameLength >= 4) {
-      const nameEnd = offset + CENTRAL_DIRECTORY_HEADER_SIZE + filenameLength;
-      const isDotApk =
-        centralDirectory[nameEnd - 4] === 0x2e &&
-        (centralDirectory[nameEnd - 3] & 0xdf) === 0x61 &&
-        (centralDirectory[nameEnd - 2] & 0xdf) === 0x70 &&
-        (centralDirectory[nameEnd - 1] & 0xdf) === 0x6b;
-      if (isDotApk) return true;
-    }
+    const nameEnd = offset + CENTRAL_DIRECTORY_HEADER_SIZE + filenameLength;
+    const extension = centralDirectory.toString('latin1', nameEnd - 4, nameEnd).toLowerCase();
+    if (filenameLength >= 4 && extension === '.apk') return true;
 
     offset += entrySize;
   }
