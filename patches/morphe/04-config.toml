@@ -1,6 +1,6 @@
 cli-source = "github:MorpheApp/morphe-desktop"
 cli-version = "dev"
-patches-source = "gitlab:Paresh-Maheshwari/paresh-patches"
+patches-source = "github:rushiranpise/morphe-patches"
 patches-version = "dev"
 
 [Telegram]

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { isApkBundle } from './apk';
 import { resolveApkmirrorApk } from './apkmirror';
 import { downloadFile } from './browser';
-import { VERSION_PATTERN } from './constants';
+import { SUPPORTED_VERSION_LINE_PATTERN } from './constants';
 import { fetchGitRelease, resolveGitAsset } from './git';
 
 import type { AppTarget } from './apkmirror';
@@ -32,8 +32,6 @@ function captureCommand(command: string, args: string[]): string {
 const TEMP_DIR = join(process.cwd(), '.temp');
 const UNSPLIT_ARCHS = new Set(['all', 'both']);
 const KNOWN_APK_EXTENSIONS = ['apkm', 'xapk', 'apks'] as const;
-// Matches a `list-versions` CLI output line, e.g. "1.2.3 (42 patches)".
-const SUPPORTED_VERSION_LINE_PATTERN = new RegExp(`^${VERSION_PATTERN.source}\\s+\\(\\d+\\s+patches\\)$`);
 
 export interface AppConfig extends AppTarget {
   readonly 'package-name': string;
