@@ -30,7 +30,7 @@ runs:
       run: |
         set -euo pipefail
 
-        DEST_DIR="$COPY_TO"
+        DEST_DIR="${COPY_TO:-.}"
         PATCH_DIR="$GITHUB_WORKSPACE/patches/$TARGET_DIR"
         SCRIPTS_DIR="$GITHUB_WORKSPACE/scripts/$TARGET_DIR"
 

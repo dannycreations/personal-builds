@@ -10,9 +10,9 @@ type Browser = Awaited<ReturnType<typeof launch>>;
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 2000;
 const SELECTOR_WAIT_TIMEOUT_MS = 10000;
+const DOWNLOAD_TIMEOUT_MS = 600000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const CHALLENGE_MARKERS = ['cloudflare', 'attention required', 'verify you are human', 'just a moment'];
-const DOWNLOAD_TIMEOUT_MS = 600000;
 
 let browser: Browser | null = null;
 
@@ -121,17 +121,17 @@ export async function fetchPage(url: string, waitSelector?: string): Promise<str
     }
 
     if (!res.ok) {
-      return fetchViaBrowserOrThrow(url, waitSelector, `APKMirror page failed: ${res.status} for ${url}`);
+      return fetchViaBrowserOrThrow(url, waitSelector, `Page failed: ${res.status} for ${url}`);
     }
 
     const html = await res.text();
     if (isChallengePage(html)) {
-      return fetchViaBrowserOrThrow(url, waitSelector, `APKMirror Cloudflare challenge at ${url}`);
+      return fetchViaBrowserOrThrow(url, waitSelector, `Cloudflare challenge at ${url}`);
     }
     return html;
   }
 
-  throw new Error(`APKMirror page failed after ${MAX_RETRIES} retries for ${url}`);
+  throw new Error(`Page failed after ${MAX_RETRIES} retries for ${url}`);
 }
 
 export async function downloadFile(url: string, dest: string): Promise<string> {
@@ -166,12 +166,11 @@ export async function downloadFile(url: string, dest: string): Promise<string> {
   let lastProgressBytes = 0;
 
   const reader = res.body.getReader();
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms for ${url}`)), DOWNLOAD_TIMEOUT_MS).unref();
+  });
 
   while (true) {
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms for ${url}`)), DOWNLOAD_TIMEOUT_MS);
-    });
-
     const { done, value } = await Promise.race([reader.read(), timeoutPromise]);
 
     if (done) break;
