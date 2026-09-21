@@ -23,12 +23,14 @@ runs:
 
     - name: Prepare Workspace
       shell: bash
-      working-directory: ${{ inputs.target-dir }}
       env:
         TARGET_DIR: ${{ inputs.target-dir }}
         COPY_TO: ${{ inputs.copy-to }}
       run: |
         set -euo pipefail
+
+        mkdir -p "$TARGET_DIR"
+        cd "$TARGET_DIR"
 
         DEST_DIR="${COPY_TO:-.}"
         PATCH_DIR="$GITHUB_WORKSPACE/patches/$TARGET_DIR"
