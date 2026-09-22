@@ -21,6 +21,14 @@ export interface AppTarget {
   readonly dpi?: string;
 }
 
+interface NormalizedTarget {
+  readonly type: string;
+  readonly arch: string;
+  readonly isUniversalArch: boolean;
+  readonly dpi: string;
+  readonly matchAnyDpi: boolean;
+}
+
 interface ApkMirrorSearchResult {
   readonly href: string;
   readonly title: string;
@@ -35,27 +43,37 @@ function isDisqusLink(href: string): boolean {
   return href.endsWith('#disqus_thread');
 }
 
-async function fetchAndLoad(label: string, url: string, waitSelector?: string): Promise<CheerioAPI> {
+async function fetchAndLoad(label: string, url: string, waitSelector?: string, referer?: string): Promise<CheerioAPI> {
   console.log(`${label}: ${url}`);
-  const html = await fetchPage(url, waitSelector);
+  const html = await fetchPage(url, waitSelector, referer);
   return load(html);
 }
 
-function matchesCriteria(rowText: string, target: AppTarget): boolean {
+function normalizeTarget(target: AppTarget): NormalizedTarget {
+  const arch = (target.arch ?? 'universal').toLowerCase();
+  const dpi = (target.dpi ?? 'nodpi').toLowerCase();
+
+  return {
+    type: (target.type ?? '').toLowerCase(),
+    arch,
+    isUniversalArch: UNIVERSAL_ARCH_ALIASES.has(arch),
+    dpi,
+    matchAnyDpi: ANY_DPI_VALUES.has(dpi),
+  };
+}
+
+function matchesCriteria(rowText: string, criteria: NormalizedTarget): boolean {
   const text = rowText.toLowerCase();
 
-  const type = (target.type ?? '').toLowerCase();
-  if (type && !text.includes(type)) return false;
+  if (criteria.type && !text.includes(criteria.type)) return false;
 
-  const arch = (target.arch ?? 'universal').toLowerCase();
-  if (UNIVERSAL_ARCH_ALIASES.has(arch)) {
+  if (criteria.isUniversalArch) {
     if (!UNIVERSAL_ARCH_MARKERS.some((marker) => text.includes(marker))) return false;
-  } else if (!text.includes(arch) && !text.includes('universal')) {
+  } else if (!text.includes(criteria.arch) && !text.includes('universal')) {
     return false;
   }
 
-  const dpi = (target.dpi ?? 'nodpi').toLowerCase();
-  if (!ANY_DPI_VALUES.has(dpi) && !text.includes(dpi)) return false;
+  if (!criteria.matchAnyDpi && !text.includes(criteria.dpi)) return false;
 
   return true;
 }
@@ -106,6 +124,7 @@ async function searchApkmirror(packageName: string, version?: string): Promise<A
 async function findVariantDownloadPage(releaseUrl: string, appTarget: AppTarget): Promise<string> {
   await sleep(RELEASE_PAGE_FETCH_DELAY_MS);
   const $ = await fetchAndLoad('Fetching release page', releaseUrl);
+  const criteria = normalizeTarget(appTarget);
 
   for (const row of $('.table-row').toArray()) {
     const $row = $(row);
@@ -114,7 +133,7 @@ async function findVariantDownloadPage(releaseUrl: string, appTarget: AppTarget)
     const isHeaderRow = lowerRowText.includes('variant') && lowerRowText.includes('arch');
     const hasVersionNumber = /\d+(\.\d+)+/.test(rowText);
 
-    if (isHeaderRow || !hasVersionNumber || !matchesCriteria(rowText, appTarget)) continue;
+    if (isHeaderRow || !hasVersionNumber || !matchesCriteria(rowText, criteria)) continue;
 
     const directHref = $row
       .find('a[href]')
@@ -138,7 +157,7 @@ async function followDownloadButton(variantPageUrl: string): Promise<string> {
 }
 
 async function resolveFinalDownloadUrl(confirmationPageUrl: string): Promise<string> {
-  const $ = await fetchAndLoad('Fetching final download page', confirmationPageUrl);
+  const $ = await fetchAndLoad('Fetching final download page', confirmationPageUrl, undefined, confirmationPageUrl);
   const href = $('a#download-link').attr('href');
   if (!href) throw new Error(`Download link not found on ${confirmationPageUrl}`);
 

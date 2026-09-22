@@ -66,11 +66,12 @@ function pickHighestSemver<T extends { readonly tag_name: string }>(releases: re
     throw new Error(`No releases found for ${path}`);
   }
 
-  const [first] = releases;
+  const [first, ...rest] = releases;
   if (!isValidSemverCore(first.tag_name)) {
     return first;
   }
-  return [...releases].sort((a, b) => sortBySemverDesc(a.tag_name, b.tag_name))[0];
+
+  return rest.reduce((highest, release) => (sortBySemverDesc(release.tag_name, highest.tag_name) < 0 ? release : highest), first);
 }
 
 function toGithubRelease(data: GithubReleaseResponse): Release {

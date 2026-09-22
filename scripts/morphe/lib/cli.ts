@@ -147,7 +147,7 @@ async function downloadApk(ctx: BuildContext, targetVersion: string): Promise<{ 
   return { apkPath: finalizeDownloadedApk(ctx, resolvedDownloadUrl, tempPath), version };
 }
 
-function resolveEnabledPatchNames(ctx: BuildContext, included: readonly string[], excluded: readonly string[]): readonly string[] {
+function resolveEnabledPatchNames(ctx: BuildContext, included: readonly string[], excluded: ReadonlySet<string>): readonly string[] {
   let enabled = included;
 
   if (enabled.length === 0) {
@@ -159,7 +159,7 @@ function resolveEnabledPatchNames(ctx: BuildContext, included: readonly string[]
     }
   }
 
-  enabled = enabled.filter((name) => !excluded.includes(name));
+  enabled = enabled.filter((name) => !excluded.has(name));
   if (enabled.length === 0) {
     throw new Error('No patches enabled. Check your "included-patches" and "excluded-patches" configuration.');
   }
@@ -176,7 +176,7 @@ function buildPatchArgs(ctx: BuildContext, apkPath: string, outputPath: string):
   }
 
   const included = parseList(appConfig['included-patches'], /[, ]+/);
-  const excluded = parseList(appConfig['excluded-patches'], /[, ]+/);
+  const excluded = new Set(parseList(appConfig['excluded-patches'], /[, ]+/));
   const enabled = resolveEnabledPatchNames(ctx, included, excluded);
 
   const patchOptions = appConfig['patches-options'] ?? {};
@@ -188,7 +188,7 @@ function buildPatchArgs(ctx: BuildContext, apkPath: string, outputPath: string):
   for (const name of excluded) args.push('-d', name);
 
   for (const [patchName, patchOption] of Object.entries(patchOptions)) {
-    if (!excluded.includes(patchName)) args.push('-e', patchName, '-O', patchOption);
+    if (!excluded.has(patchName)) args.push('-e', patchName, '-O', patchOption);
   }
 
   args.push(...parseList(appConfig['patcher-args'], /\s+/), '-t', workDir, '--unsigned', apkPath);

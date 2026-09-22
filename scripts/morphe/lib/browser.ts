@@ -73,11 +73,26 @@ function isChallengePage(html: string): boolean {
   return CHALLENGE_MARKERS.some((marker) => lower.includes(marker));
 }
 
-async function fetchWithBrowser(url: string, waitSelector?: string): Promise<{ html: string; cookies: Record<string, string> } | null> {
+async function trackedFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const hostname = hostnameOf(url);
+  const headers = { ...buildRequestHeaders(hostname), ...(init.headers as Record<string, string> | undefined) };
+  const res = await fetch(url, { ...init, headers });
+  storeCookies(hostname, parseSetCookieHeaders(res.headers.getSetCookie()));
+  return res;
+}
+
+async function fetchWithBrowser(
+  url: string,
+  waitSelector?: string,
+  referer?: string,
+): Promise<{ html: string; cookies: Record<string, string> } | null> {
   try {
     const instance = await getBrowser();
     const page = await instance.newPage();
-    const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const response = await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      ...(referer ? { referer } : {}),
+    });
 
     if (!response || response.status() !== 200) {
       await page.close();
@@ -99,19 +114,21 @@ async function fetchWithBrowser(url: string, waitSelector?: string): Promise<{ h
   }
 }
 
-async function fetchViaBrowserOrThrow(url: string, waitSelector: string | undefined, errorMessage: string): Promise<string> {
-  const result = await fetchWithBrowser(url, waitSelector);
+async function fetchViaBrowserOrThrow(
+  url: string,
+  waitSelector: string | undefined,
+  referer: string | undefined,
+  errorMessage: string,
+): Promise<string> {
+  const result = await fetchWithBrowser(url, waitSelector, referer);
   if (!result) throw new Error(errorMessage);
   storeCookies(hostnameOf(url), result.cookies);
   return result.html;
 }
 
-export async function fetchPage(url: string, waitSelector?: string): Promise<string> {
-  const hostname = hostnameOf(url);
-
+export async function fetchPage(url: string, waitSelector?: string, referer?: string): Promise<string> {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(url, { headers: buildRequestHeaders(hostname) });
-    storeCookies(hostname, parseSetCookieHeaders(res.headers.getSetCookie()));
+    const res = await trackedFetch(url, referer ? { headers: { Referer: referer } } : {});
 
     if (res.status === 429 && attempt < MAX_RETRIES) {
       const retryDelay = BASE_RETRY_DELAY_MS * 2 ** (attempt - 1);
@@ -121,12 +138,12 @@ export async function fetchPage(url: string, waitSelector?: string): Promise<str
     }
 
     if (!res.ok) {
-      return fetchViaBrowserOrThrow(url, waitSelector, `Page failed: ${res.status} for ${url}`);
+      return fetchViaBrowserOrThrow(url, waitSelector, referer, `Page failed: ${res.status} for ${url}`);
     }
 
     const html = await res.text();
     if (isChallengePage(html)) {
-      return fetchViaBrowserOrThrow(url, waitSelector, `Cloudflare challenge at ${url}`);
+      return fetchViaBrowserOrThrow(url, waitSelector, referer, `Cloudflare challenge at ${url}`);
     }
     return html;
   }
@@ -139,18 +156,14 @@ export async function downloadFile(url: string, dest: string): Promise<string> {
   mkdirSync(dirname(dest), { recursive: true });
 
   let currentUrl = url;
-  let hostname = hostnameOf(currentUrl);
-  let res = await fetch(currentUrl, { headers: buildRequestHeaders(hostname), redirect: 'manual' });
-  storeCookies(hostname, parseSetCookieHeaders(res.headers.getSetCookie()));
+  let res = await trackedFetch(currentUrl, { redirect: 'manual' });
 
   while (REDIRECT_STATUSES.has(res.status)) {
     const location = res.headers.get('location');
     if (!location) break;
 
     currentUrl = new URL(location, currentUrl).toString();
-    hostname = hostnameOf(currentUrl);
-    res = await fetch(currentUrl, { headers: buildRequestHeaders(hostname), redirect: 'manual' });
-    storeCookies(hostname, parseSetCookieHeaders(res.headers.getSetCookie()));
+    res = await trackedFetch(currentUrl, { redirect: 'manual' });
   }
 
   if (!res.ok || !res.body) {
