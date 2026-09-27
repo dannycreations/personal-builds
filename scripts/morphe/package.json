@@ -13,8 +13,8 @@
   "homepage": "https://github.com/dannycreations/personal-builds",
   "dependencies": {
     "cheerio": "^1.2.0",
-    "cloakbrowser": "^0.5.10",
-    "dotenv": "^17.4.2",
+    "cloakbrowser": "^0.5.11",
+    "dotenv": "^18.0.4",
     "playwright-core": "^1.63.0",
     "toml": "^5.0.0"
   },

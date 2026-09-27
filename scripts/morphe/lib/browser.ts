@@ -6,6 +6,7 @@ import { launch } from 'cloakbrowser';
 import { sleep } from './utils';
 
 type Browser = Awaited<ReturnType<typeof launch>>;
+type Page = Awaited<ReturnType<Browser['newPage']>>;
 
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 2000;
@@ -13,6 +14,12 @@ const SELECTOR_WAIT_TIMEOUT_MS = 10000;
 const DOWNLOAD_TIMEOUT_MS = 600000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const CHALLENGE_MARKERS = ['cloudflare', 'attention required', 'verify you are human', 'just a moment'];
+const CHALLENGE_POLL_INTERVAL_MS = 2000;
+const CHALLENGE_MAX_ATTEMPTS = 15;
+const TURNSTILE_FRAME_PATTERN = /challenges\.cloudflare\.com/;
+const TURNSTILE_CLICK_SELECTORS = ['input[type=checkbox]', '#challenge-stage', 'label', 'body'];
+const TURNSTILE_MIN_ELEMENT_WIDTH = 5;
+const TURNSTILE_CLICK_TIMEOUT_MS = 5000;
 
 let browser: Browser | null = null;
 
@@ -68,9 +75,43 @@ function parseSetCookieHeaders(headers: readonly string[]): Record<string, strin
   return cookies;
 }
 
-function isChallengePage(html: string): boolean {
-  const lower = html.toLowerCase();
+function hasChallengeMarkers(text: string): boolean {
+  const lower = text.toLowerCase();
   return CHALLENGE_MARKERS.some((marker) => lower.includes(marker));
+}
+
+function isChallengeResponse(res: Response): boolean {
+  return res.status === 403 && res.headers.get('cf-mitigated') === 'challenge';
+}
+
+async function clickTurnstileCheckbox(page: Page): Promise<void> {
+  for (const frame of page.frames()) {
+    if (!TURNSTILE_FRAME_PATTERN.test(frame.url())) continue;
+
+    for (const selector of TURNSTILE_CLICK_SELECTORS) {
+      const element = await frame.$(selector).catch(() => null);
+      if (!element) continue;
+
+      const box = await element.boundingBox().catch(() => null);
+      if (!box || box.width < TURNSTILE_MIN_ELEMENT_WIDTH) continue;
+
+      await element.click({ force: true, timeout: TURNSTILE_CLICK_TIMEOUT_MS }).catch(() => undefined);
+      return;
+    }
+  }
+}
+
+async function clearCloudflareChallenge(page: Page): Promise<void> {
+  // The interstitial is an interactive Turnstile checkbox that a plain fetch and a passive
+  // browser both stall on, so poll the page and click it until Cloudflare issues clearance.
+  for (let attempt = 0; attempt < CHALLENGE_MAX_ATTEMPTS; attempt++) {
+    await sleep(CHALLENGE_POLL_INTERVAL_MS);
+
+    const title = await page.title().catch(() => '');
+    if (!hasChallengeMarkers(title)) return;
+
+    await clickTurnstileCheckbox(page);
+  }
 }
 
 async function trackedFetch(url: string, init: RequestInit = {}): Promise<Response> {
@@ -142,13 +183,32 @@ export async function fetchPage(url: string, waitSelector?: string, referer?: st
     }
 
     const html = await res.text();
-    if (isChallengePage(html)) {
+    if (hasChallengeMarkers(html)) {
       return fetchViaBrowserOrThrow(url, waitSelector, referer, `Cloudflare challenge at ${url}`);
     }
     return html;
   }
 
   throw new Error(`Page failed after ${MAX_RETRIES} retries for ${url}`);
+}
+
+async function downloadViaBrowser(url: string, dest: string): Promise<string> {
+  const instance = await getBrowser();
+  const context = await instance.newContext({ acceptDownloads: true });
+  const page = await context.newPage();
+
+  try {
+    const pending = page.waitForEvent('download', { timeout: DOWNLOAD_TIMEOUT_MS });
+    // A challenge page answers the navigation, so a rejection here is expected, not fatal.
+    await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => undefined);
+    await clearCloudflareChallenge(page);
+
+    const download = await pending;
+    await download.saveAs(dest);
+    return download.url();
+  } finally {
+    await context.close().catch(() => undefined);
+  }
 }
 
 export async function downloadFile(url: string, dest: string): Promise<string> {
@@ -164,6 +224,11 @@ export async function downloadFile(url: string, dest: string): Promise<string> {
 
     currentUrl = new URL(location, currentUrl).toString();
     res = await trackedFetch(currentUrl, { redirect: 'manual' });
+  }
+
+  if (isChallengeResponse(res)) {
+    console.warn(`Cloudflare challenge on ${url}, downloading through the browser`);
+    return downloadViaBrowser(url, dest);
   }
 
   if (!res.ok || !res.body) {
