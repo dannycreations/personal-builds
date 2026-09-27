@@ -1,25 +1,24 @@
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
 
-const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const EOCD_RECORD_SIZE = 22;
 const CENTRAL_DIRECTORY_HEADER_SIZE = 46;
 const EOCD_SEARCH_WINDOW = 65535 + 100; // max ZIP comment length, plus room for the EOCD record itself
 
+// Raw little-endian bytes of the EOCD signature (0x06054b50).
+const EOCD_SIGNATURE_BYTES = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+
+// Single 32-bit word compare for ".apk"/".APK"/".Apk" etc.
+const APK_EXTENSION_OR_MASK = 0x20202000; // lower-cases the 3 letter bytes, leaves the leading '.' untouched
+const APK_EXTENSION_VALUE = 0x2e | (0x61 << 8) | (0x70 << 16) | (0x6b << 24); // '.apk'
+
 function findEndOfCentralDirectory(tail: Buffer): number {
-  for (let i = tail.length - EOCD_RECORD_SIZE; i >= 0; i--) {
-    if (tail.readUInt32LE(i) === EOCD_SIGNATURE) return i;
-  }
-  return -1;
+  if (tail.length < EOCD_RECORD_SIZE) return -1;
+  return tail.lastIndexOf(EOCD_SIGNATURE_BYTES, tail.length - EOCD_RECORD_SIZE);
 }
 
 function endsWithApkExtension(buffer: Buffer, nameEnd: number): boolean {
-  return (
-    buffer[nameEnd - 4] === 0x2e && // '.'
-    (buffer[nameEnd - 3] | 0x20) === 0x61 && // 'a'
-    (buffer[nameEnd - 2] | 0x20) === 0x70 && // 'p'
-    (buffer[nameEnd - 1] | 0x20) === 0x6b // 'k'
-  );
+  return (buffer.readUInt32LE(nameEnd - 4) | APK_EXTENSION_OR_MASK) === APK_EXTENSION_VALUE;
 }
 
 function centralDirectoryContainsApkEntry(centralDirectory: Buffer, entryCount: number): boolean {

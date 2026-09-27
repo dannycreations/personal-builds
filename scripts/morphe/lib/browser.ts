@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { createWriteStream, existsSync, mkdirSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { launch } from 'cloakbrowser';
 
 import { sleep } from './utils';
@@ -12,8 +13,10 @@ const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 2000;
 const SELECTOR_WAIT_TIMEOUT_MS = 10000;
 const DOWNLOAD_TIMEOUT_MS = 600000;
+const PROGRESS_LOG_INTERVAL_MS = 2000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-const CHALLENGE_MARKERS = ['cloudflare', 'attention required', 'verify you are human', 'just a moment'];
+
+const CHALLENGE_PATTERN = /cloudflare|attention required|verify you are human|just a moment/i;
 const CHALLENGE_POLL_INTERVAL_MS = 2000;
 const CHALLENGE_MAX_ATTEMPTS = 15;
 const TURNSTILE_FRAME_PATTERN = /challenges\.cloudflare\.com/;
@@ -75,11 +78,6 @@ function parseSetCookieHeaders(headers: readonly string[]): Record<string, strin
   return cookies;
 }
 
-function hasChallengeMarkers(text: string): boolean {
-  const lower = text.toLowerCase();
-  return CHALLENGE_MARKERS.some((marker) => lower.includes(marker));
-}
-
 function isChallengeResponse(res: Response): boolean {
   return res.status === 403 && res.headers.get('cf-mitigated') === 'challenge';
 }
@@ -108,7 +106,7 @@ async function clearCloudflareChallenge(page: Page): Promise<void> {
     await sleep(CHALLENGE_POLL_INTERVAL_MS);
 
     const title = await page.title().catch(() => '');
-    if (!hasChallengeMarkers(title)) return;
+    if (!CHALLENGE_PATTERN.test(title)) return;
 
     await clickTurnstileCheckbox(page);
   }
@@ -183,7 +181,7 @@ export async function fetchPage(url: string, waitSelector?: string, referer?: st
     }
 
     const html = await res.text();
-    if (hasChallengeMarkers(html)) {
+    if (CHALLENGE_PATTERN.test(html)) {
       return fetchViaBrowserOrThrow(url, waitSelector, referer, `Cloudflare challenge at ${url}`);
     }
     return html;
@@ -211,6 +209,36 @@ async function downloadViaBrowser(url: string, dest: string): Promise<string> {
   }
 }
 
+function createProgressLogger(dest: string, totalBytes: number): Transform {
+  let downloaded = 0;
+  let lastLogTime = Date.now();
+  let lastLogBytes = 0;
+
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      downloaded += chunk.length;
+
+      const now = Date.now();
+      if (now - lastLogTime >= PROGRESS_LOG_INTERVAL_MS) {
+        const speedMbps = (downloaded - lastLogBytes) / ((now - lastLogTime) / 1000) / 1024 / 1024;
+        const percent = totalBytes ? ((downloaded / totalBytes) * 100).toFixed(1) : '???.?';
+        const mb = downloaded / 1024 / 1024;
+        const totalMb = totalBytes / 1024 / 1024;
+
+        console.log(`Downloading ${basename(dest)}: ${mb.toFixed(1)} MB / ${totalMb.toFixed(1)} MB (${percent}%) at ${speedMbps.toFixed(1)} MB/s`);
+        lastLogTime = now;
+        lastLogBytes = downloaded;
+      }
+
+      callback(null, chunk);
+    },
+    flush(callback) {
+      console.log(`Download complete: ${downloaded} bytes to ${dest}`);
+      callback();
+    },
+  });
+}
+
 export async function downloadFile(url: string, dest: string): Promise<string> {
   if (existsSync(dest)) return new URL(url).pathname;
   mkdirSync(dirname(dest), { recursive: true });
@@ -236,43 +264,23 @@ export async function downloadFile(url: string, dest: string): Promise<string> {
   }
 
   const contentLength = Number(res.headers.get('content-length')) || 0;
-  const file = await open(dest, 'w');
+  const timeout = setTimeout(() => {
+    throw new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms for ${url}`);
+  }, DOWNLOAD_TIMEOUT_MS).unref();
+  const controller = new AbortController();
+  clearTimeout(timeout);
+  const timer = setTimeout(
+    () => controller.abort(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms for ${url}`)),
+    DOWNLOAD_TIMEOUT_MS,
+  ).unref();
 
-  let downloaded = 0;
-  const startTime = Date.now();
-  let lastProgressTime = startTime;
-  let lastProgressBytes = 0;
-
-  const reader = res.body.getReader();
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms for ${url}`)), DOWNLOAD_TIMEOUT_MS).unref();
-  });
-
-  while (true) {
-    const { done, value } = await Promise.race([reader.read(), timeoutPromise]);
-
-    if (done) break;
-
-    downloaded += value.length;
-    await file.write(value);
-
-    const now = Date.now();
-    if (now - lastProgressTime >= 2000) {
-      const elapsedMs = now - lastProgressTime;
-      const bytesSinceLast = downloaded - lastProgressBytes;
-      const speedBps = bytesSinceLast / (elapsedMs / 1000);
-      const mb = downloaded / 1024 / 1024;
-      const speedMbps = speedBps / 1024 / 1024;
-      const totalMb = contentLength / 1024 / 1024;
-      const percent = contentLength ? ((downloaded / contentLength) * 100).toFixed(1) : '???.?';
-
-      console.log(`Downloading ${basename(dest)}: ${mb.toFixed(1)} MB / ${totalMb.toFixed(1)} MB (${percent}%) at ${speedMbps.toFixed(1)} MB/s`);
-      lastProgressTime = now;
-      lastProgressBytes = downloaded;
-    }
+  try {
+    await pipeline(Readable.fromWeb(res.body), createProgressLogger(dest, contentLength), createWriteStream(dest), {
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
   }
 
-  await file.close();
-  console.log(`Download complete: ${downloaded} bytes to ${dest}`);
   return currentUrl;
 }

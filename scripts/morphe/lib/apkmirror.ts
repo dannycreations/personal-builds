@@ -9,9 +9,9 @@ import type { CheerioAPI } from 'cheerio';
 const BASE_URL = 'https://www.apkmirror.com';
 const RELEASE_PAGE_FETCH_DELAY_MS = 1000;
 
-const EXCLUDED_TITLE_KEYWORDS = ['wear os', 'daydream', 'automotive', 'android tv', 'beta', 'alpha'];
+const EXCLUDED_TITLE_PATTERN = /wear os|daydream|automotive|android tv|beta|alpha/i;
 const UNIVERSAL_ARCH_ALIASES = new Set(['universal', 'noarch']);
-const UNIVERSAL_ARCH_MARKERS = ['universal', 'noarch', 'arm64-v8a', 'armeabi-v7a'];
+const UNIVERSAL_ARCH_PATTERN = /universal|noarch|arm64-v8a|armeabi-v7a/;
 const ANY_DPI_VALUES = new Set(['nodpi', '120-640dpi', 'all', '']);
 
 export interface AppTarget {
@@ -68,7 +68,7 @@ function matchesCriteria(rowText: string, criteria: NormalizedTarget): boolean {
   if (criteria.type && !text.includes(criteria.type)) return false;
 
   if (criteria.isUniversalArch) {
-    if (!UNIVERSAL_ARCH_MARKERS.some((marker) => text.includes(marker))) return false;
+    if (!UNIVERSAL_ARCH_PATTERN.test(text)) return false;
   } else if (!text.includes(criteria.arch) && !text.includes('universal')) {
     return false;
   }
@@ -100,8 +100,7 @@ async function searchApkmirror(packageName: string, version?: string): Promise<A
     const versionMatch = title.match(VERSION_PATTERN);
     if (!versionMatch) return;
 
-    const lowerTitle = title.toLowerCase();
-    if (EXCLUDED_TITLE_KEYWORDS.some((keyword) => lowerTitle.includes(keyword))) return;
+    if (EXCLUDED_TITLE_PATTERN.test(title)) return;
 
     results.push({ href: toAbsoluteUrl(link), title, version: versionMatch[1] });
   });
