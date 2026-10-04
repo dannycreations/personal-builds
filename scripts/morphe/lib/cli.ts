@@ -1,7 +1,7 @@
 import 'dotenv/config';
 
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { isApkBundle } from './apk';
@@ -9,6 +9,8 @@ import { resolveApkmirrorApk } from './apkmirror';
 import { downloadFile } from './browser';
 import { SUPPORTED_VERSION_LINE_PATTERN } from './constants';
 import { fetchGitRelease, resolveGitAsset } from './git';
+import { signApk } from './sign';
+import { assertSuccess, runCommand } from './utils';
 
 import type { AppTarget } from './apkmirror';
 
@@ -51,17 +53,6 @@ interface BuildContext {
   readonly cliPath: string;
   readonly patchesPath: string;
   readonly workDir: string;
-}
-
-function assertSuccess(command: string, result: ReturnType<typeof spawnSync>): void {
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`${command} exited with ${result.status}`);
-}
-
-function runCommand(command: string, args: string[], cwd: string): void {
-  console.log(`$ ${command} ${args.join(' ')}`);
-  const result = spawnSync(command, args, { cwd, encoding: 'utf-8', stdio: 'inherit' });
-  assertSuccess(command, result);
 }
 
 function captureCliOutput(ctx: BuildContext, subcommand: string): string {
@@ -249,6 +240,8 @@ export async function buildApp(appName: string, appConfig: AppConfig, options: M
   const outputDir = join(process.cwd(), 'dist');
   mkdirSync(outputDir, { recursive: true });
   const finalPath = join(outputDir, `${appName}-v${version}-${archTag}.apk`);
-  cpSync(outputPath, finalPath);
+
+  console.log(`[${appName}] Signing...`);
+  await signApk(outputPath, finalPath, TEMP_DIR);
   console.log(`[${appName}] Build complete: ${finalPath}`);
 }
