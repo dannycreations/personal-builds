@@ -37,9 +37,7 @@ jobs:
           distribution: zulu
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
+        uses: oven-sh/setup-bun@v2
 
       - name: Cache Dependencies
         uses: actions/cache@v5

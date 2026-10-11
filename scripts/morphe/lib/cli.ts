@@ -46,13 +46,14 @@ interface ReleaseAssetRequest {
   readonly label: string;
 }
 
-interface BuildContext {
+export interface BuildContext {
   readonly appName: string;
   readonly appConfig: AppConfig;
   readonly packageName: string;
   readonly cliPath: string;
   readonly patchesPath: string;
   readonly workDir: string;
+  readonly tempDir: string;
 }
 
 function captureCliOutput(ctx: BuildContext, subcommand: string): string {
@@ -158,8 +159,8 @@ function resolveEnabledPatchNames(ctx: BuildContext, included: readonly string[]
   return enabled;
 }
 
-function buildPatchArgs(ctx: BuildContext, apkPath: string, outputPath: string): string[] {
-  const { appConfig, cliPath, patchesPath, workDir } = ctx;
+export function buildPatchArgs(ctx: BuildContext, apkPath: string, outputPath: string): string[] {
+  const { appConfig, cliPath, patchesPath, tempDir } = ctx;
   const args = ['-jar', cliPath, 'patch', '--patches', patchesPath, '--out', outputPath];
 
   if (!isUniversalArch(appConfig.arch)) {
@@ -182,7 +183,7 @@ function buildPatchArgs(ctx: BuildContext, apkPath: string, outputPath: string):
     if (!excluded.has(patchName)) args.push('-e', patchName, '-O', patchOption);
   }
 
-  args.push(...parseList(appConfig['patcher-args'], /\s+/), '-t', workDir, '--unsigned', apkPath);
+  args.push(...parseList(appConfig['patcher-args'], /\s+/), '-t', tempDir, '--unsigned', apkPath);
 
   return args;
 }
@@ -191,6 +192,9 @@ export async function buildApp(appName: string, appConfig: AppConfig, options: M
   const workDir = join(TEMP_DIR, appName);
   if (existsSync(workDir)) rmSync(workDir, { recursive: true });
   mkdirSync(workDir, { recursive: true });
+
+  const tempDir = join(workDir, 'temp');
+  mkdirSync(tempDir, { recursive: true });
 
   console.log(`\n[${appName}] Starting build...`);
 
@@ -219,6 +223,7 @@ export async function buildApp(appName: string, appConfig: AppConfig, options: M
     cliPath,
     patchesPath,
     workDir,
+    tempDir,
   };
 
   console.log(`[${appName}] Listing supported versions...`);
