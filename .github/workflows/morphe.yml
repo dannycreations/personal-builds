@@ -39,14 +39,6 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Cache Dependencies
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cloakbrowser
-            ~/.bun/install/cache
-          key: ${{ env.WORK_DIR }}-${{ runner.os }}-bun-${{ hashFiles(format('{0}/bun.lock', env.WORK_DIR)) }}
-
       - name: Install Dependencies
         run: bun install --frozen-lockfile
 
