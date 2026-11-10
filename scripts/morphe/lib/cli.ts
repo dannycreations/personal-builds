@@ -10,7 +10,7 @@ import { downloadFile } from './browser';
 import { SUPPORTED_VERSION_LINE_PATTERN } from './constants';
 import { fetchGitRelease, resolveGitAsset } from './git';
 import { signApk } from './sign';
-import { assertSuccess, runCommand } from './utils';
+import { assertSuccess, resolveJavaCommand, runCommand } from './utils';
 
 import type { AppTarget } from './apkmirror';
 
@@ -57,9 +57,10 @@ export interface BuildContext {
 }
 
 function captureCliOutput(ctx: BuildContext, subcommand: string): string {
+  const java = resolveJavaCommand();
   const args = ['-jar', ctx.cliPath, subcommand, '--patches', ctx.patchesPath, '-f', ctx.packageName];
-  const result = spawnSync('java', args, { encoding: 'utf-8', stdio: 'pipe' });
-  assertSuccess('java', result);
+  const result = spawnSync(java, args, { encoding: 'utf-8', stdio: 'pipe' });
+  assertSuccess(java, result);
   return result.stdout ?? '';
 }
 
@@ -239,7 +240,7 @@ export async function buildApp(appName: string, appConfig: AppConfig, options: M
   const patchArgs = buildPatchArgs(ctx, apkPath, outputPath);
 
   console.log(`[${appName}] Patching...`);
-  runCommand('java', patchArgs, workDir);
+  runCommand(resolveJavaCommand(), patchArgs, workDir);
 
   const archTag = isUniversalArch(appConfig.arch) ? 'universal' : appConfig.arch;
   const outputDir = join(process.cwd(), 'dist');

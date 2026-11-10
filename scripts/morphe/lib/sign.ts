@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { downloadFile } from './browser';
-import { runCommand } from './utils';
+import { resolveJavaCommand, runCommand } from './utils';
 
 const KEYSTORE_PATH = join(import.meta.dir, '..', 'ks-p12.keystore');
 const KEYSTORE_PASSWORD = '123456789';
@@ -39,5 +39,5 @@ export async function signApk(apkPath: string, outputPath: string, cacheDir: str
   const apksignerPath = join(cacheDir, 'apksigner.jar');
   await downloadFile(APKSIGNER_URL, apksignerPath);
 
-  runCommand('java', buildSignArgs(apksignerPath, apkPath, outputPath), cacheDir);
+  runCommand(resolveJavaCommand(), buildSignArgs(apksignerPath, apkPath, outputPath), cacheDir);
 }
