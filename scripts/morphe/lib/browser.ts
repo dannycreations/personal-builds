@@ -7,16 +7,18 @@ import { launch } from 'cloakbrowser';
 import { sleep } from './utils';
 
 type Browser = Awaited<ReturnType<typeof launch>>;
+type BrowserContext = Awaited<ReturnType<Browser['newContext']>>;
 type Page = Awaited<ReturnType<Browser['newPage']>>;
 
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 2000;
 const SELECTOR_WAIT_TIMEOUT_MS = 10000;
 const DOWNLOAD_TIMEOUT_MS = 600000;
+const DOWNLOAD_EVENT_TIMEOUT_MS = 60000;
 const PROGRESS_LOG_INTERVAL_MS = 2000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
-const CHALLENGE_PATTERN = /cloudflare|attention required|verify you are human|just a moment/i;
+const CHALLENGE_PATTERN = /just a moment|attention required|verify you are human|checking your browser/i;
 const CHALLENGE_POLL_INTERVAL_MS = 2000;
 const CHALLENGE_MAX_ATTEMPTS = 15;
 const TURNSTILE_FRAME_PATTERN = /challenges\.cloudflare\.com/;
@@ -25,6 +27,7 @@ const TURNSTILE_MIN_ELEMENT_WIDTH = 5;
 const TURNSTILE_CLICK_TIMEOUT_MS = 5000;
 
 let browser: Browser | null = null;
+let pageContext: BrowserContext | null = null;
 
 const cookieJars = new Map<string, Map<string, string>>();
 
@@ -33,7 +36,14 @@ async function getBrowser(): Promise<Browser> {
   return browser;
 }
 
+async function getPageContext(instance: Browser): Promise<BrowserContext> {
+  pageContext ??= await instance.newContext();
+  return pageContext;
+}
+
 export async function closeBrowser(): Promise<void> {
+  await pageContext?.close().catch(() => undefined);
+  pageContext = null;
   await browser?.close();
   browser = null;
 }
@@ -60,6 +70,14 @@ function buildRequestHeaders(hostname: string): Record<string, string> {
 function storeCookies(hostname: string, cookies: Record<string, string>): void {
   const jar = getCookieJar(hostname);
   for (const [name, value] of Object.entries(cookies)) jar.set(name, value);
+}
+
+function buildContextCookies(hostname: string): Array<{ name: string; value: string; url: string }> {
+  const jar = cookieJars.get(hostname);
+  if (!jar || jar.size === 0) return [];
+
+  const url = `https://${hostname}/`;
+  return [...jar].map(([name, value]) => ({ name, value, url }));
 }
 
 function parseSetCookieHeaders(headers: readonly string[]): Record<string, string> {
@@ -125,15 +143,29 @@ async function fetchWithBrowser(
   waitSelector?: string,
   referer?: string,
 ): Promise<{ html: string; cookies: Record<string, string> } | null> {
+  let page: Page | null = null;
   try {
+    const hostname = hostnameOf(url);
     const instance = await getBrowser();
-    const page = await instance.newPage();
-    const response = await page.goto(url, {
-      waitUntil: 'domcontentloaded',
-      ...(referer ? { referer } : {}),
-    });
+    const context = await getPageContext(instance);
+    await context.addCookies(buildContextCookies(hostname));
+    page = await context.newPage();
 
-    if (!response || response.status() !== 200) {
+    const response = await page
+      .goto(url, {
+        waitUntil: 'domcontentloaded',
+        ...(referer ? { referer } : {}),
+      })
+      .catch(() => null);
+
+    const title = await page.title().catch(() => '');
+    if (!response || response.status() === 403 || CHALLENGE_PATTERN.test(title)) {
+      await clearCloudflareChallenge(page);
+      if (CHALLENGE_PATTERN.test(await page.title().catch(() => ''))) {
+        await page.close();
+        return null;
+      }
+    } else if (response.status() !== 200) {
       await page.close();
       return null;
     }
@@ -143,12 +175,16 @@ async function fetchWithBrowser(
     }
 
     const html = await page.content();
-    const cookies = Object.fromEntries((await page.context().cookies()).map((cookie) => [cookie.name, cookie.value]));
+
+    const cookies = Object.fromEntries(
+      (await context.cookies()).filter((cookie) => hostname.endsWith(cookie.domain.replace(/^\./, ''))).map((cookie) => [cookie.name, cookie.value]),
+    );
 
     await page.close();
     return { html, cookies };
   } catch (error) {
     console.warn(`Browser fetch failed for ${url}: ${(error as Error).message}`);
+    await page?.close().catch(() => undefined);
     return null;
   }
 }
@@ -195,18 +231,24 @@ async function downloadViaBrowser(url: string, dest: string): Promise<string> {
   const context = await instance.newContext({ acceptDownloads: true });
   const page = await context.newPage();
 
+  let downloadUrl: string;
   try {
-    const pending = page.waitForEvent('download', { timeout: DOWNLOAD_TIMEOUT_MS });
+    const pending = page.waitForEvent('download', { timeout: DOWNLOAD_EVENT_TIMEOUT_MS });
     // A challenge page answers the navigation, so a rejection here is expected, not fatal.
     await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => undefined);
     await clearCloudflareChallenge(page);
 
     const download = await pending;
-    await download.saveAs(dest);
-    return download.url();
+    downloadUrl = download.url();
   } finally {
     await context.close().catch(() => undefined);
   }
+
+  // Playwright's saveAs stalls on APKMirror's R2-hosted files, so stream the resolved URL directly.
+  const res = await trackedFetch(downloadUrl);
+  if (!res.ok || !res.body) throw new Error(`Download failed ${res.status} for ${downloadUrl}`);
+  await streamToFile(res, dest, downloadUrl);
+  return downloadUrl;
 }
 
 function createProgressLogger(dest: string, totalBytes: number): Transform {
@@ -239,6 +281,23 @@ function createProgressLogger(dest: string, totalBytes: number): Transform {
   });
 }
 
+async function streamToFile(res: Response, dest: string, url: string): Promise<void> {
+  const contentLength = Number(res.headers.get('content-length')) || 0;
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms for ${url}`)),
+    DOWNLOAD_TIMEOUT_MS,
+  ).unref();
+
+  try {
+    await pipeline(Readable.fromWeb(res.body!), createProgressLogger(dest, contentLength), createWriteStream(dest), {
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function downloadFile(url: string, dest: string): Promise<string> {
   if (existsSync(dest)) return new URL(url).pathname;
   mkdirSync(dirname(dest), { recursive: true });
@@ -263,24 +322,6 @@ export async function downloadFile(url: string, dest: string): Promise<string> {
     throw new Error(`Download failed ${res.status} for ${url}`);
   }
 
-  const contentLength = Number(res.headers.get('content-length')) || 0;
-  const timeout = setTimeout(() => {
-    throw new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms for ${url}`);
-  }, DOWNLOAD_TIMEOUT_MS).unref();
-  const controller = new AbortController();
-  clearTimeout(timeout);
-  const timer = setTimeout(
-    () => controller.abort(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms for ${url}`)),
-    DOWNLOAD_TIMEOUT_MS,
-  ).unref();
-
-  try {
-    await pipeline(Readable.fromWeb(res.body), createProgressLogger(dest, contentLength), createWriteStream(dest), {
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-
+  await streamToFile(res, dest, currentUrl);
   return currentUrl;
 }

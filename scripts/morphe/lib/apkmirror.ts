@@ -155,8 +155,8 @@ async function followDownloadButton(variantPageUrl: string): Promise<string> {
   return toAbsoluteUrl(href);
 }
 
-async function resolveFinalDownloadUrl(confirmationPageUrl: string): Promise<string> {
-  const $ = await fetchAndLoad('Fetching final download page', confirmationPageUrl, undefined, confirmationPageUrl);
+async function resolveFinalDownloadUrl(confirmationPageUrl: string, referer: string): Promise<string> {
+  const $ = await fetchAndLoad('Fetching final download page', confirmationPageUrl, undefined, referer);
   const href = $('a#download-link').attr('href');
   if (!href) throw new Error(`Download link not found on ${confirmationPageUrl}`);
 
@@ -173,7 +173,7 @@ export async function resolveApkmirrorApk(packageName: string, appTarget: AppTar
 
   const variantPageUrl = await findVariantDownloadPage(searchResult.href, appTarget);
   const confirmationPageUrl = await followDownloadButton(variantPageUrl);
-  const url = await resolveFinalDownloadUrl(confirmationPageUrl);
+  const url = await resolveFinalDownloadUrl(confirmationPageUrl, variantPageUrl);
 
   return { url, version: searchResult.version };
 }
