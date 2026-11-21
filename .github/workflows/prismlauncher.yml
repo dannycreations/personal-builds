@@ -19,7 +19,7 @@ jobs:
 
     env:
       BUILD_TYPE: Release
-      CMAKE_PRESET: windows_msvc
+      CMAKE_PRESET: ci
       ARTIFACT_NAME: Windows-MSVC-Qt6
       BUILD_PLATFORM: official
 

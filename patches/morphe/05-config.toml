@@ -1,0 +1,8 @@
+cli-source = "github:MorpheApp/morphe-desktop"
+cli-version = "dev"
+patches-source = "github:VenusIsJaded/Venus-Patches"
+patches-version = "dev"
+
+[Discord]
+package-name = "com.discord"
+arch = "arm64-v8a"
